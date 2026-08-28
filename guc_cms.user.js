@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GUC CMS Modern UI & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      2.1.0
+// @version      2.2.0
 // @description  Notion-style collapsible toggles for GUC CMS with rounded corners, modern cards, quick navigation, and 1-click batch ZIP downloads.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -119,7 +119,6 @@
             cdSize += cd.length;
         }
 
-        // End of central directory record (22 bytes)
         const eocd = new Uint8Array(22);
         const ev = new DataView(eocd.buffer);
         ev.setUint32(0, 0x06054b50, true);
@@ -149,11 +148,10 @@
     const MODERN_STYLES = `
         /* Global Typography & Background */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
             background-color: #f8fafc !important;
             color: #0f172a !important;
             line-height: 1.55 !important;
-            -webkit-font-smoothing: antialiased;
         }
 
         /* Top Sticky Master Toolbar */
@@ -225,7 +223,6 @@
             transform: translateY(-1px);
         }
 
-        /* Outline Buttons */
         .guc-btn-outline {
             background: #ffffff;
             border: 1px solid #cbd5e1;
@@ -246,43 +243,16 @@
             color: #0f172a !important;
         }
 
-        /* Notion-Style Week Section Card */
-        .guc-week-section-wrapper {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            margin-bottom: 22px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
-            overflow: hidden;
-            transition: box-shadow 0.2s ease, border-color 0.2s ease;
-        }
-        .guc-week-section-wrapper:hover {
-            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.06);
-            border-color: #cbd5e1;
+        /* Heading Wrapper with Notion Toggle */
+        .guc-week-heading-wrapper {
+            display: inline-flex !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+            margin-bottom: 8px !important;
         }
 
-        /* Notion-Style Week Header */
-        .guc-modern-week-header {
-            padding: 14px 20px;
-            background: #ffffff;
-            border-bottom: 1px solid #f1f5f9;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.15s ease;
-        }
-        .guc-modern-week-header:hover {
-            background: #f8fafc;
-        }
-        .guc-week-header-left {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        /* Notion-Style Arrowhead Toggle */
+        /* Notion-Style Arrowhead Toggle Button */
         .guc-notion-toggle-btn {
             width: 26px;
             height: 26px;
@@ -295,61 +265,59 @@
             border: none;
             cursor: pointer;
             transition: background 0.15s ease, color 0.15s ease;
+            padding: 0;
+            margin-right: 4px;
         }
-        .guc-modern-week-header:hover .guc-notion-toggle-btn {
-            background: rgba(0, 0, 0, 0.05);
+        .guc-notion-toggle-btn:hover {
+            background: rgba(0, 0, 0, 0.07);
             color: #0f172a;
         }
         .guc-notion-arrow {
             width: 12px;
             height: 12px;
             fill: currentColor;
-            transform: rotate(90deg); /* Points down when open */
+            transform: rotate(90deg); /* Points down when expanded */
             transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .guc-week-collapsed .guc-notion-arrow {
+        .guc-notion-toggle-btn.collapsed .guc-notion-arrow {
             transform: rotate(0deg); /* Points right when collapsed */
         }
 
-        .guc-week-title-text {
-            font-size: 17px;
-            font-weight: 700;
-            color: #0f172a;
-            margin: 0 !important;
-            letter-spacing: -0.2px;
+        .guc-week-title-clickable {
+            cursor: pointer;
+            user-select: none;
+            /* Match the toolbar title typeface while keeping week names prominent. */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif !important;
+            font-weight: 700 !important;
         }
-        .guc-week-header-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .guc-week-title-clickable:hover {
+            color: #0d6efd;
         }
 
-        /* Collapsible Week Body Container */
-        .guc-week-body-container {
-            padding: 18px 20px;
-            background: #ffffff;
-            transition: all 0.25s ease;
-        }
-        .guc-week-collapsed .guc-week-body-container {
-            display: none !important;
-        }
-
-        /* Modernized Item Card (.card.mb-4) with Rounded Corners */
+        /* Rounded Corners on Material Cards */
         div.card.mb-4 {
             background: #ffffff !important;
             border: 1px solid #e2e8f0 !important;
             border-radius: 14px !important;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
             margin-bottom: 14px !important;
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
         }
         div.card.mb-4:hover {
             transform: translateY(-2px) !important;
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06) !important;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.07) !important;
             border-color: #cbd5e1 !important;
         }
         div.card.mb-4 .card-body {
             padding: 16px 20px !important;
+        }
+
+        /* Rounded Outer Week Cards */
+        .card:not(.mb-4) {
+            border-radius: 16px !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03) !important;
+            margin-bottom: 24px !important;
         }
 
         /* Content Title & Badges */
@@ -380,7 +348,7 @@
             text-transform: uppercase !important;
         }
 
-        /* Content Action Buttons with Rounded Corners */
+        /* Rounded Buttons */
         a.contentbtn.btn-primary, button.contentbtn.btn-primary {
             background: linear-gradient(135deg, #0d6efd, #0b5ed7) !important;
             border: 1px solid #0a58ca !important;
@@ -432,7 +400,6 @@
             color: #dc2626 !important;
         }
 
-        /* Subtle Rating Stars */
         .rating, [class*="rating"] {
             opacity: 0.4;
             transition: opacity 0.2s ease;
@@ -441,7 +408,7 @@
             opacity: 1;
         }
 
-        /* Week Select Checkbox */
+        /* Checkbox & Week Zip Button */
         .guc-week-select-label {
             display: inline-flex;
             align-items: center;
@@ -469,7 +436,6 @@
             accent-color: #0d6efd;
         }
 
-        /* Week ZIP Button */
         .guc-zip-btn {
             display: inline-flex;
             align-items: center;
@@ -522,7 +488,7 @@
             background-color: #059669;
         }
 
-        /* Top Dropdown Container */
+        /* Top Dropdown Menu */
         .guc-dropdown-container {
             position: relative;
             display: inline-block;
@@ -854,6 +820,14 @@
         return '.pdf';
     }
 
+    function getCourseName() {
+        const pageHeading = document.querySelector(
+            '#ContentPlaceHolderright_ContentPlaceHoldercontent_LabelCourseName, #lblCourseName, .coursename, h1, h2'
+        );
+        const fallback = document.title.replace(/[-|].*$/, '').trim() || 'Course Materials';
+        return (pageHeading?.textContent || fallback).trim();
+    }
+
     function extractItemInfo(card) {
         if (!card) return null;
 
@@ -896,7 +870,8 @@
 
         const isVod = ext === '.mp4' || ext === '.mkv' || typeSuffix.toLowerCase().includes('vod') || (linkHidden && vodButtonVisible);
 
-        const baseTitle = sanitizeFilename(mainTitle + typeSuffix);
+        // Keep the displayed item title, then identify the course it belongs to.
+        const baseTitle = sanitizeFilename(`${mainTitle}${typeSuffix}_${getCourseName()}`);
 
         return {
             cardElement: card,
@@ -1096,7 +1071,6 @@
             const link = item.downloadLinkElement;
             if (!link) return;
 
-            // Restyle type text into a modern pill badge
             const titleContainer = card.querySelector(CONFIG.TITLE_CONTAINER_SELECTOR);
             if (titleContainer && !titleContainer.querySelector('.guc-content-type-badge')) {
                 if (item.typeSuffix) {
@@ -1275,7 +1249,7 @@
     }
 
     // =========================================================================
-    // FEATURE 3: NOTION-STYLE WEEKS & TOP MASTER TOOLBAR
+    // FEATURE 3: TOP MASTER TOOLBAR & QUICK JUMP BAR
     // =========================================================================
 
     const detectedWeeksMap = new Map();
@@ -1334,16 +1308,16 @@
             targetContainer.prepend(modernToolbarEl);
         }
 
-        // Expand / Collapse All Listeners
+        // Expand / Collapse All
         modernToolbarEl.querySelector('#guc-btn-expand-all').addEventListener('click', () => {
             detectedWeeksMap.forEach(w => {
-                if (w.sectionWrapper) w.sectionWrapper.classList.remove('guc-week-collapsed');
+                setWeekCollapsed(w, false);
             });
         });
 
         modernToolbarEl.querySelector('#guc-btn-collapse-all').addEventListener('click', () => {
             detectedWeeksMap.forEach(w => {
-                if (w.sectionWrapper) w.sectionWrapper.classList.add('guc-week-collapsed');
+                setWeekCollapsed(w, true);
             });
         });
 
@@ -1407,16 +1381,16 @@
                 pill.title = `Scroll to ${week.title}`;
                 pill.addEventListener('click', (e) => {
                     e.preventDefault();
-                    if (week.sectionWrapper) {
-                        week.sectionWrapper.classList.remove('guc-week-collapsed');
-                        week.sectionWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setWeekCollapsed(week, false);
+                    if (week.heading) {
+                        week.heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     }
                 });
                 week.jumpPill = pill;
                 jumpBarEl.appendChild(pill);
             }
 
-            // Dropdown list row
+            // Dropdown row
             if (week.dropdownRow && week.dropdownRow.parentNode) {
                 if (week.dropdownCheckbox) {
                     week.dropdownCheckbox.checked = !!week.selected;
@@ -1510,27 +1484,47 @@
     }
 
     // =========================================================================
-    // FEATURE 4: NOTION-STYLE TOGGLE ARROWHEAD & ROUNDED SECTIONS
+    // FEATURE 4: NOTION-STYLE TOGGLE & WEEK BODY COLLAPSING (Zero DOM disruption)
     // =========================================================================
 
-    function modernizeWeekSections() {
+    function setWeekCollapsed(week, collapsed) {
+        if (!week) return;
+        week.collapsed = collapsed;
+
+        if (week.notionToggleBtn) {
+            if (collapsed) {
+                week.notionToggleBtn.classList.add('collapsed');
+            } else {
+                week.notionToggleBtn.classList.remove('collapsed');
+            }
+        }
+
+        if (week.bodyElements) {
+            week.bodyElements.forEach(el => {
+                el.style.display = collapsed ? 'none' : '';
+            });
+        }
+    }
+
+    function injectNotionTogglesAndButtons() {
         const headings = Array.from(document.querySelectorAll(CONFIG.WEEK_HEADING_SELECTOR)).filter(h => {
             const text = (h.textContent || '').trim();
             return /^week[:\s]/i.test(text) && !h.closest('.card.mb-4');
         });
 
         headings.forEach((heading) => {
-            if (heading.getAttribute('data-guc-modernized')) return;
-            heading.setAttribute('data-guc-modernized', 'true');
+            if (heading.getAttribute('data-guc-notion-bound')) return;
+            heading.setAttribute('data-guc-notion-bound', 'true');
 
             const rawTitle = heading.textContent.replace(/Download.*Zip/gi, '').trim();
 
+            // Locate elements belonging to this week without moving them in the DOM
             const headingRow = heading.closest('.row') || heading;
             let collectedElements = [];
             let next = headingRow.nextElementSibling;
 
             while (next) {
-                if (next.querySelector('h2.text-big') || (next.matches('h2') && /^week[:\s]/i.test(next.textContent))) {
+                if (next.querySelector('h2.text-big') || (next.matches('h2, h3') && /^week[:\s]/i.test(next.textContent))) {
                     break;
                 }
                 collectedElements.push(next);
@@ -1546,51 +1540,15 @@
                 }
             });
 
-            if (collectedCards.length === 0) return;
+            // If cards were inside the outer card container
+            const outerCard = heading.closest('.card:not(.mb-4)');
+            if (collectedCards.length === 0 && outerCard) {
+                outerCard.querySelectorAll(CONFIG.ITEM_CARD_SELECTOR).forEach(c => collectedCards.push(c));
+                collectedElements = Array.from(outerCard.children).filter(el => !el.contains(heading) && el !== heading);
+            }
 
             const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
             const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
-
-            // Notion-Style Section Card
-            const sectionWrapper = document.createElement('div');
-            sectionWrapper.className = 'guc-week-section-wrapper';
-
-            const modernHeader = document.createElement('div');
-            modernHeader.className = 'guc-modern-week-header';
-
-            // Notion-Style Arrow SVG
-            modernHeader.innerHTML = `
-                <div class="guc-week-header-left">
-                    <button type="button" class="guc-notion-toggle-btn" title="Toggle week">
-                        <svg class="guc-notion-arrow" viewBox="0 0 16 16">
-                            <path d="M6 3.5l5 4.5-5 4.5V3.5z"/>
-                        </svg>
-                    </button>
-                    <h3 class="guc-week-title-text">${rawTitle}</h3>
-                </div>
-                <div class="guc-week-header-actions" onclick="event.stopPropagation()"></div>
-            `;
-
-            // Collapsible Body
-            const bodyContainer = document.createElement('div');
-            bodyContainer.className = 'guc-week-body-container';
-
-            // Insert wrapper into DOM
-            headingRow.parentNode.insertBefore(sectionWrapper, headingRow);
-            sectionWrapper.appendChild(modernHeader);
-            sectionWrapper.appendChild(bodyContainer);
-
-            // Move contents into body container
-            collectedElements.forEach(el => bodyContainer.appendChild(el));
-            headingRow.style.display = 'none';
-
-            // Click header to toggle collapse (Notion behavior)
-            modernHeader.addEventListener('click', () => {
-                sectionWrapper.classList.toggle('guc-week-collapsed');
-            });
-
-            // Action buttons inside header
-            const actionsContainer = modernHeader.querySelector('.guc-week-header-actions');
 
             let weekEntry = detectedWeeksMap.get(rawTitle);
             if (!weekEntry) {
@@ -1598,19 +1556,53 @@
                     title: rawTitle,
                     items: filteredItems,
                     selected: false,
+                    collapsed: false,
+                    heading: heading,
+                    bodyElements: collectedElements,
                     onPageCheckbox: null,
                     dropdownCheckbox: null,
                     dropdownRow: null,
-                    sectionWrapper: sectionWrapper,
+                    notionToggleBtn: null,
                     jumpPill: null
                 };
                 detectedWeeksMap.set(rawTitle, weekEntry);
             } else {
                 weekEntry.items = filteredItems;
-                weekEntry.sectionWrapper = sectionWrapper;
+                weekEntry.bodyElements = collectedElements;
             }
 
-            // 1. Checkbox
+            // Build Header Content with Notion Arrow, Clickable Title, Checkbox, and ZIP Button
+            heading.classList.add('guc-week-heading-wrapper');
+            heading.innerHTML = ''; // Clear raw text node
+
+            // 1. Notion Toggle Button
+            const toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'guc-notion-toggle-btn';
+            toggleBtn.title = `Toggle ${rawTitle}`;
+            toggleBtn.innerHTML = `
+                <svg class="guc-notion-arrow" viewBox="0 0 16 16">
+                    <path d="M6 3.5l5 4.5-5 4.5V3.5z"/>
+                </svg>
+            `;
+            toggleBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setWeekCollapsed(weekEntry, !weekEntry.collapsed);
+            });
+            weekEntry.notionToggleBtn = toggleBtn;
+            heading.appendChild(toggleBtn);
+
+            // 2. Clickable Title
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'guc-week-title-clickable';
+            titleSpan.textContent = rawTitle;
+            titleSpan.addEventListener('click', () => {
+                setWeekCollapsed(weekEntry, !weekEntry.collapsed);
+            });
+            heading.appendChild(titleSpan);
+
+            // 3. Selection Checkbox
             const selectLabel = document.createElement('label');
             selectLabel.className = 'guc-week-select-label';
             selectLabel.title = `Select ${rawTitle} for batch download`;
@@ -1629,9 +1621,9 @@
             weekEntry.onPageCheckbox = checkbox;
             selectLabel.appendChild(checkbox);
             selectLabel.appendChild(document.createTextNode('Select'));
-            actionsContainer.appendChild(selectLabel);
+            heading.appendChild(selectLabel);
 
-            // 2. Week ZIP Button
+            // 4. Single Week ZIP Button
             const zipBtn = document.createElement('button');
             zipBtn.type = 'button';
             zipBtn.className = 'guc-zip-btn';
@@ -1646,7 +1638,7 @@
                 executeZipDownloadPipeline(rawTitle, entries, zipBtn);
             });
 
-            actionsContainer.appendChild(zipBtn);
+            heading.appendChild(zipBtn);
         });
 
         syncDropdownItems();
@@ -1658,7 +1650,7 @@
 
     function runAll() {
         modernizeCardsAndLinks();
-        modernizeWeekSections();
+        injectNotionTogglesAndButtons();
     }
 
     if (document.readyState === 'loading') {
@@ -1674,15 +1666,14 @@
             if (mut.target && (
                 mut.target.closest?.('.guc-modern-toolbar') ||
                 mut.target.closest?.('.guc-progress-modal') ||
-                mut.target.closest?.('.guc-modern-week-header') ||
-                mut.target.classList?.contains('guc-week-section-wrapper')
+                mut.target.closest?.('.guc-week-heading-wrapper')
             )) {
                 continue;
             }
 
             if (mut.addedNodes.length > 0) {
                 for (const node of mut.addedNodes) {
-                    if (node.nodeType === 1 && !node.classList?.contains('guc-modern-toolbar') && !node.classList?.contains('guc-week-section-wrapper')) {
+                    if (node.nodeType === 1 && !node.classList?.contains('guc-modern-toolbar')) {
                         shouldUpdate = true;
                         break;
                     }
@@ -1701,5 +1692,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Modern UI & Batch Downloader v2.1.0 initialized.');
+    console.log('[GUC CMS] Modern UI & Batch Downloader v2.2.0 initialized.');
 })();
