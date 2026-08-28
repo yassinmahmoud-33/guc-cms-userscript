@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GUC CMS Content Renamer & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.6.0
-// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and multi-week selection batch ZIP downloader.
+// @version      1.7.0
+// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and a collapsible dropdown menu to select and batch download multiple weeks.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -271,63 +271,168 @@
             background-color: #157347;
         }
 
-        /* Floating Multi-Week Action Bar at Bottom */
-        .guc-multi-action-bar {
-            position: fixed;
-            bottom: 24px;
-            left: 50%;
-            transform: translateX(-50%) translateY(120%);
-            background: #212529;
-            color: #ffffff;
-            padding: 12px 24px;
-            border-radius: 50px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        /* Top Dropdown Container */
+        .guc-dropdown-container {
+            position: relative;
+            display: inline-block;
+            margin: 15px 0;
+            z-index: 1000;
+        }
+        .guc-dropdown-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff !important;
+            background: linear-gradient(135deg, #0d6efd, #0b5ed7);
+            border: 1px solid #0a58ca;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.25);
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        .guc-dropdown-toggle-btn:hover {
+            background: linear-gradient(135deg, #0b5ed7, #0a58ca);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 14px rgba(13, 110, 253, 0.35);
+        }
+        .guc-dropdown-arrow {
+            transition: transform 0.25s ease;
+            font-size: 11px;
+        }
+        .guc-dropdown-container.open .guc-dropdown-arrow {
+            transform: rotate(180deg);
+        }
+
+        /* Collapsible Dropdown Menu */
+        .guc-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            left: 0;
+            width: 380px;
+            max-width: 90vw;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+            padding: 14px;
+            z-index: 10000;
+            animation: fadeInDown 0.2s ease-out forwards;
+        }
+        .guc-dropdown-container.open .guc-dropdown-menu {
+            display: block;
+        }
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .guc-dd-header {
             display: flex;
             align-items: center;
-            gap: 16px;
-            z-index: 99999;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            font-size: 14px;
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            justify-content: space-between;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e9ecef;
+            margin-bottom: 10px;
         }
-        .guc-multi-action-bar.visible {
-            transform: translateX(-50%) translateY(0);
+        .guc-dd-title {
+            font-weight: 700;
+            font-size: 13px;
+            color: #343a40;
         }
-        .guc-multi-count-text {
+        .guc-dd-quick-actions {
+            display: flex;
+            gap: 6px;
+        }
+        .guc-dd-btn-sm {
+            background: #f8f9fa;
+            border: 1px solid #ced4da;
+            color: #495057;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
             font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .guc-dd-btn-sm:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            color: #212529;
+        }
+
+        /* Scrollable List of Weeks */
+        .guc-dd-weeks-list {
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 12px;
+            padding-right: 4px;
+        }
+        .guc-dd-weeks-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .guc-dd-weeks-list::-webkit-scrollbar-thumb {
+            background: #ced4da;
+            border-radius: 3px;
+        }
+
+        .guc-dd-week-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 7px 10px;
+            border-radius: 6px;
+            transition: background 0.15s ease;
+            cursor: pointer;
+            user-select: none;
+            margin-bottom: 2px;
+        }
+        .guc-dd-week-item:hover {
+            background: #f1f3f5;
+        }
+        .guc-dd-week-left {
             display: flex;
             align-items: center;
             gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #212529;
         }
-        .guc-multi-btn-download {
+        .guc-dd-week-badge {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6c757d;
+            background: #e9ecef;
+            padding: 2px 7px;
+            border-radius: 10px;
+        }
+
+        /* Dropdown Footer Download Button */
+        .guc-dd-download-btn {
+            width: 100%;
+            padding: 10px;
             background: linear-gradient(135deg, #198754, #157347);
             color: #ffffff !important;
             border: none;
-            padding: 8px 18px;
-            border-radius: 30px;
+            border-radius: 6px;
             font-weight: 700;
             font-size: 13px;
             cursor: pointer;
-            box-shadow: 0 2px 6px rgba(25, 135, 84, 0.3);
+            box-shadow: 0 3px 8px rgba(25, 135, 84, 0.25);
             transition: all 0.2s ease;
         }
-        .guc-multi-btn-download:hover {
+        .guc-dd-download-btn:hover {
             background: linear-gradient(135deg, #157347, #0f5132);
-            transform: scale(1.04);
+            box-shadow: 0 5px 12px rgba(25, 135, 84, 0.35);
         }
-        .guc-multi-btn-action {
-            background: rgba(255, 255, 255, 0.15);
-            color: #f8f9fa !important;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-        .guc-multi-btn-action:hover {
-            background: rgba(255, 255, 255, 0.28);
+        .guc-dd-download-btn:disabled {
+            background: #6c757d !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
         }
 
         /* Floating Progress Modal */
@@ -791,10 +896,6 @@
     // FEATURE 2: BATCH ZIP PIPELINE (Single Week & Multi-Week)
     // =========================================================================
 
-    /**
-     * Executes the download and ZIP generation for a collection of files.
-     * fileEntries: [{ name: "Week Name/Lecture.pdf", url: "https://..." }]
-     */
     async function executeZipDownloadPipeline(archiveTitle, fileEntries, statusBtn = null) {
         if (!fileEntries || fileEntries.length === 0) {
             alert('No downloadable files found in selection.');
@@ -917,70 +1018,159 @@
     }
 
     // =========================================================================
-    // FEATURE 3: MULTI-WEEK SELECTION ENGINE & FLOATING BAR
+    // FEATURE 3: COLLAPSIBLE DROPDOWN SELECTION MENU
     // =========================================================================
 
     const detectedWeeks = [];
-    let multiActionBarEl = null;
+    let dropdownContainerEl = null;
 
-    function getMultiActionBar() {
-        if (!multiActionBarEl) {
-            multiActionBarEl = document.createElement('div');
-            multiActionBarEl.className = 'guc-multi-action-bar';
-            multiActionBarEl.innerHTML = `
-                <div class="guc-multi-count-text">
-                    <span>📦 <strong id="guc-selected-weeks-count">0</strong> Weeks Selected (<strong id="guc-selected-files-count">0</strong> Files)</span>
-                </div>
-                <button type="button" class="guc-multi-btn-action" id="guc-multi-select-all">Select All</button>
-                <button type="button" class="guc-multi-btn-action" id="guc-multi-clear">Clear</button>
-                <button type="button" class="guc-multi-btn-download" id="guc-multi-download-btn">📦 Download Selected as ZIP</button>
-            `;
-            document.body.appendChild(multiActionBarEl);
+    function renderDropdownMenu() {
+        if (!detectedWeeks.length) return;
 
-            multiActionBarEl.querySelector('#guc-multi-select-all').onclick = () => {
-                detectedWeeks.forEach(w => {
-                    if (w.checkbox) w.checkbox.checked = true;
-                });
-                updateMultiActionBar();
-            };
+        // Find or create dropdown container
+        if (!dropdownContainerEl) {
+            dropdownContainerEl = document.createElement('div');
+            dropdownContainerEl.className = 'guc-dropdown-container';
 
-            multiActionBarEl.querySelector('#guc-multi-clear').onclick = () => {
-                detectedWeeks.forEach(w => {
-                    if (w.checkbox) w.checkbox.checked = false;
-                });
-                updateMultiActionBar();
-            };
+            // Insert near top of content
+            const targetContainer = document.querySelector('.container, .container-fluid, #main-content, form') || document.body;
+            const firstHeading = document.querySelector(CONFIG.WEEK_HEADING_SELECTOR) || targetContainer.firstChild;
 
-            multiActionBarEl.querySelector('#guc-multi-download-btn').onclick = () => {
-                downloadSelectedWeeks();
-            };
+            if (firstHeading && firstHeading.parentNode) {
+                firstHeading.parentNode.insertBefore(dropdownContainerEl, firstHeading);
+            } else {
+                targetContainer.prepend(dropdownContainerEl);
+            }
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if (dropdownContainerEl && !dropdownContainerEl.contains(e.target)) {
+                    dropdownContainerEl.classList.remove('open');
+                }
+            });
         }
-        return multiActionBarEl;
+
+        const selectedWeeks = detectedWeeks.filter(w => w.selected);
+        const totalSelectedFiles = selectedWeeks.reduce((sum, w) => sum + w.items.length, 0);
+
+        dropdownContainerEl.innerHTML = `
+            <button type="button" class="guc-dropdown-toggle-btn" id="guc-dd-toggle">
+                <span>📑 Select Weeks to Download</span>
+                <span class="guc-zip-count-badge" id="guc-dd-badge">${selectedWeeks.length} selected (${totalSelectedFiles} files)</span>
+                <span class="guc-dropdown-arrow">▼</span>
+            </button>
+            <div class="guc-dropdown-menu">
+                <div class="guc-dd-header">
+                    <span class="guc-dd-title">Select Weeks (${detectedWeeks.length} total)</span>
+                    <div class="guc-dd-quick-actions">
+                        <button type="button" class="guc-dd-btn-sm" id="guc-dd-select-all">Select All</button>
+                        <button type="button" class="guc-dd-btn-sm" id="guc-dd-clear">Clear</button>
+                    </div>
+                </div>
+                <div class="guc-dd-weeks-list" id="guc-dd-list"></div>
+                <button type="button" class="guc-dd-download-btn" id="guc-dd-download-btn" ${selectedWeeks.length === 0 ? 'disabled' : ''}>
+                    📦 Download Selected (${selectedWeeks.length} Weeks - ${totalSelectedFiles} Files) as ZIP
+                </button>
+            </div>
+        `;
+
+        const toggleBtn = dropdownContainerEl.querySelector('#guc-dd-toggle');
+        toggleBtn.onclick = (e) => {
+            e.stopPropagation();
+            dropdownContainerEl.classList.toggle('open');
+        };
+
+        const listEl = dropdownContainerEl.querySelector('#guc-dd-list');
+        detectedWeeks.forEach(week => {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'guc-dd-week-item';
+
+            itemRow.innerHTML = `
+                <div class="guc-dd-week-left">
+                    <input type="checkbox" class="guc-week-checkbox" ${week.selected ? 'checked' : ''}>
+                    <span>${week.title}</span>
+                </div>
+                <span class="guc-dd-week-badge">${week.items.length} files</span>
+            `;
+
+            const chk = itemRow.querySelector('input');
+            chk.onchange = (e) => {
+                e.stopPropagation();
+                week.selected = chk.checked;
+                if (week.onPageCheckbox) week.onPageCheckbox.checked = chk.checked;
+                updateDropdownCounts();
+            };
+
+            itemRow.onclick = (e) => {
+                if (e.target !== chk) {
+                    chk.checked = !chk.checked;
+                    week.selected = chk.checked;
+                    if (week.onPageCheckbox) week.onPageCheckbox.checked = chk.checked;
+                    updateDropdownCounts();
+                }
+            };
+
+            listEl.appendChild(itemRow);
+        });
+
+        // Quick Actions
+        dropdownContainerEl.querySelector('#guc-dd-select-all').onclick = (e) => {
+            e.stopPropagation();
+            detectedWeeks.forEach(w => {
+                w.selected = true;
+                if (w.onPageCheckbox) w.onPageCheckbox.checked = true;
+            });
+            refreshDropdownItems();
+            updateDropdownCounts();
+        };
+
+        dropdownContainerEl.querySelector('#guc-dd-clear').onclick = (e) => {
+            e.stopPropagation();
+            detectedWeeks.forEach(w => {
+                w.selected = false;
+                if (w.onPageCheckbox) w.onPageCheckbox.checked = false;
+            });
+            refreshDropdownItems();
+            updateDropdownCounts();
+        };
+
+        // Download Action
+        dropdownContainerEl.querySelector('#guc-dd-download-btn').onclick = (e) => {
+            e.stopPropagation();
+            dropdownContainerEl.classList.remove('open');
+            downloadSelectedWeeks();
+        };
     }
 
-    function updateMultiActionBar() {
-        const bar = getMultiActionBar();
-        const selected = detectedWeeks.filter(w => w.checkbox && w.checkbox.checked);
+    function refreshDropdownItems() {
+        if (!dropdownContainerEl) return;
+        const checkboxes = dropdownContainerEl.querySelectorAll('#guc-dd-list .guc-week-checkbox');
+        checkboxes.forEach((chk, idx) => {
+            if (detectedWeeks[idx]) {
+                chk.checked = !!detectedWeeks[idx].selected;
+            }
+        });
+    }
 
+    function updateDropdownCounts() {
+        if (!dropdownContainerEl) return;
+        const selected = detectedWeeks.filter(w => w.selected);
         const totalFiles = selected.reduce((sum, w) => sum + w.items.length, 0);
 
-        const weeksCountEl = bar.querySelector('#guc-selected-weeks-count');
-        const filesCountEl = bar.querySelector('#guc-selected-files-count');
+        const badge = dropdownContainerEl.querySelector('#guc-dd-badge');
+        const dlBtn = dropdownContainerEl.querySelector('#guc-dd-download-btn');
 
-        if (weeksCountEl) weeksCountEl.textContent = selected.length;
-        if (filesCountEl) filesCountEl.textContent = totalFiles;
-
-        if (selected.length > 0) {
-            bar.classList.add('visible');
-        } else {
-            bar.classList.remove('visible');
+        if (badge) badge.textContent = `${selected.length} selected (${totalFiles} files)`;
+        if (dlBtn) {
+            dlBtn.disabled = selected.length === 0;
+            dlBtn.innerHTML = `📦 Download Selected (${selected.length} Weeks - ${totalFiles} Files) as ZIP`;
         }
     }
 
     function downloadSelectedWeeks() {
-        const selected = detectedWeeks.filter(w => w.checkbox && w.checkbox.checked);
+        const selected = detectedWeeks.filter(w => w.selected);
         if (selected.length === 0) {
-            alert('Please select at least one week using the checkboxes.');
+            alert('Please select at least one week from the dropdown menu.');
             return;
         }
 
@@ -993,7 +1183,6 @@
 
             deduplicated.forEach(item => {
                 allFileEntries.push({
-                    // If multiple weeks selected, place files into subfolders per week
                     name: isMultiWeek ? `${cleanWeekFolder}/${item.uniqueFilename}` : item.uniqueFilename,
                     url: item.url
                 });
@@ -1006,7 +1195,7 @@
             ? `${courseName} - Selected (${selected.length} Weeks)`
             : selected[0].title;
 
-        const downloadBtn = document.querySelector('#guc-multi-download-btn');
+        const downloadBtn = dropdownContainerEl ? dropdownContainerEl.querySelector('#guc-dd-download-btn') : null;
         executeZipDownloadPipeline(archiveName, allFileEntries, downloadBtn);
     }
 
@@ -1059,7 +1248,15 @@
                 const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
                 const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
 
-                // 1. Checkbox for multi-week selection
+                // Week entry object
+                const weekEntry = {
+                    title: rawTitle,
+                    items: filteredItems,
+                    selected: false,
+                    onPageCheckbox: null
+                };
+
+                // 1. Checkbox for selection directly beside heading
                 const selectLabel = document.createElement('label');
                 selectLabel.className = 'guc-week-select-label';
                 selectLabel.title = `Select ${rawTitle} for multi-week batch download`;
@@ -1068,9 +1265,12 @@
                 checkbox.type = 'checkbox';
                 checkbox.className = 'guc-week-checkbox';
                 checkbox.addEventListener('change', () => {
-                    updateMultiActionBar();
+                    weekEntry.selected = checkbox.checked;
+                    refreshDropdownItems();
+                    updateDropdownCounts();
                 });
 
+                weekEntry.onPageCheckbox = checkbox;
                 selectLabel.appendChild(checkbox);
                 selectLabel.appendChild(document.createTextNode('Select'));
                 heading.appendChild(selectLabel);
@@ -1092,15 +1292,12 @@
 
                 heading.appendChild(zipBtn);
 
-                // Store in detected weeks list
-                detectedWeeks.push({
-                    title: rawTitle,
-                    items: filteredItems,
-                    checkbox: checkbox,
-                    heading: heading
-                });
+                detectedWeeks.push(weekEntry);
             }
         });
+
+        // Render / refresh dropdown menu at the top
+        renderDropdownMenu();
     }
 
     // =========================================================================
@@ -1138,5 +1335,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.6.0 initialized.');
+    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.7.0 initialized.');
 })();
