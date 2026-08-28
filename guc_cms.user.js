@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GUC CMS Content Renamer & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.7.0
-// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and a collapsible dropdown menu to select and batch download multiple weeks.
+// @version      1.8.0
+// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and a smooth collapsible dropdown menu to select and batch download multiple weeks.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -22,32 +22,15 @@
     // CONFIGURATION & SELECTORS
     // =========================================================================
     const CONFIG = {
-        // Individual content item cards
         ITEM_CARD_SELECTOR: 'div.card.mb-4',
-
-        // Download link selector inside each card
         DOWNLOAD_LINK_SELECTOR: 'a#download.contentbtn, a.contentbtn[href*="/Uploads/"]',
-
-        // Title element selector inside each card
         TITLE_STRONG_SELECTOR: 'div[id^="content"] strong',
         TITLE_CONTAINER_SELECTOR: 'div[id^="content"]',
-
-        // VoD "Watch Video" button selector
         VOD_BUTTON_SELECTOR: 'input.vodbutton, .vodbutton',
-
-        // Week heading selector
         WEEK_HEADING_SELECTOR: 'h2.text-big, h1.text-big, h2, h3',
-
-        // Maximum safe filename character length (excluding extension)
         MAX_FILENAME_LENGTH: 150,
-
-        // Whether to include VoD (MP4) files in the weekly ZIP archive
         INCLUDE_VOD_IN_ZIP: true,
-
-        // Concurrent download limit for batch fetching
         CONCURRENCY_LIMIT: 3,
-
-        // Request timeout in milliseconds (30 seconds)
         REQUEST_TIMEOUT_MS: 30000
     };
 
@@ -72,10 +55,6 @@
         return (crc ^ 0xFFFFFFFF) >>> 0;
     }
 
-    /**
-     * Builds a standard uncompressed ZIP file Uint8Array in memory.
-     * Takes an array of objects: [{ name: "Week 1/Lecture.pdf", data: ArrayBuffer | Uint8Array }, ...]
-     */
     function buildZipSynchronous(files) {
         const encoder = new TextEncoder();
         const parts = [];
@@ -91,17 +70,17 @@
             // Local header (30 bytes + filename)
             const localHeader = new Uint8Array(30 + nameBytes.length);
             const lv = new DataView(localHeader.buffer);
-            lv.setUint32(0, 0x04034b50, true); // Local header signature
-            lv.setUint16(4, 20, true);         // Version needed (2.0)
-            lv.setUint16(6, 0x0800, true);     // Flags (UTF-8)
-            lv.setUint16(8, 0, true);          // Compression (0 = STORE)
-            lv.setUint16(10, 0x5460, true);    // Mod time (10:35 AM)
-            lv.setUint16(12, 0x5821, true);    // Mod date (2024-01-01)
-            lv.setUint32(14, crc, true);       // CRC32
-            lv.setUint32(18, size, true);      // Compressed size
-            lv.setUint32(22, size, true);      // Uncompressed size
-            lv.setUint16(26, nameBytes.length, true); // Name length
-            lv.setUint16(28, 0, true);         // Extra field length
+            lv.setUint32(0, 0x04034b50, true);
+            lv.setUint16(4, 20, true);
+            lv.setUint16(6, 0x0800, true);
+            lv.setUint16(8, 0, true);
+            lv.setUint16(10, 0x5460, true);
+            lv.setUint16(12, 0x5821, true);
+            lv.setUint32(14, crc, true);
+            lv.setUint32(18, size, true);
+            lv.setUint32(22, size, true);
+            lv.setUint16(26, nameBytes.length, true);
+            lv.setUint16(28, 0, true);
             localHeader.set(nameBytes, 30);
 
             parts.push(localHeader);
@@ -110,23 +89,23 @@
             // Central Directory Entry (46 bytes + filename)
             const cdEntry = new Uint8Array(46 + nameBytes.length);
             const cv = new DataView(cdEntry.buffer);
-            cv.setUint32(0, 0x02014b50, true); // Central header signature
-            cv.setUint16(4, 20, true);         // Version made by
-            cv.setUint16(6, 20, true);         // Version needed
-            cv.setUint16(8, 0x0800, true);     // Flags (UTF-8)
-            cv.setUint16(10, 0, true);         // Compression (STORE)
-            cv.setUint16(12, 0x5460, true);    // Mod time
-            cv.setUint16(14, 0x5821, true);    // Mod date
-            cv.setUint32(16, crc, true);       // CRC32
-            cv.setUint32(20, size, true);      // Compressed size
-            cv.setUint32(24, size, true);      // Uncompressed size
-            cv.setUint16(28, nameBytes.length, true); // Name length
-            cv.setUint16(30, 0, true);         // Extra field length
-            cv.setUint16(32, 0, true);         // Comment length
-            cv.setUint16(34, 0, true);         // Disk start
-            cv.setUint16(36, 0, true);         // Internal attr
-            cv.setUint32(38, 0x81a40000, true);// External attr (-rw-r--r--)
-            cv.setUint32(42, offset, true);    // Local header offset
+            cv.setUint32(0, 0x02014b50, true);
+            cv.setUint16(4, 20, true);
+            cv.setUint16(6, 20, true);
+            cv.setUint16(8, 0x0800, true);
+            cv.setUint16(10, 0, true);
+            cv.setUint16(12, 0x5460, true);
+            cv.setUint16(14, 0x5821, true);
+            cv.setUint32(16, crc, true);
+            cv.setUint32(20, size, true);
+            cv.setUint32(24, size, true);
+            cv.setUint16(28, nameBytes.length, true);
+            cv.setUint16(30, 0, true);
+            cv.setUint16(32, 0, true);
+            cv.setUint16(34, 0, true);
+            cv.setUint16(36, 0, true);
+            cv.setUint32(38, 0x81a40000, true);
+            cv.setUint32(42, offset, true);
             cdEntry.set(nameBytes, 46);
 
             cdEntries.push(cdEntry);
@@ -143,14 +122,14 @@
         // End of central directory record (22 bytes)
         const eocd = new Uint8Array(22);
         const ev = new DataView(eocd.buffer);
-        ev.setUint32(0, 0x06054b50, true); // EOCD signature
-        ev.setUint16(4, 0, true);          // Disk number
-        ev.setUint16(6, 0, true);          // Disk with CD
-        ev.setUint16(8, files.length, true);// Disk entries
-        ev.setUint16(10, files.length, true);// Total entries
-        ev.setUint32(12, cdSize, true);    // CD size
-        ev.setUint32(16, cdOffset, true);  // CD offset
-        ev.setUint16(20, 0, true);         // Comment length
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(4, 0, true);
+        ev.setUint16(6, 0, true);
+        ev.setUint16(8, files.length, true);
+        ev.setUint16(10, files.length, true);
+        ev.setUint32(12, cdSize, true);
+        ev.setUint32(16, cdOffset, true);
+        ev.setUint16(20, 0, true);
         parts.push(eocd);
 
         let totalLength = parts.reduce((acc, p) => acc + p.length, 0);
@@ -175,7 +154,6 @@
             gap: 10px !important;
         }
 
-        /* Checkbox label beside Week heading */
         .guc-week-select-label {
             display: inline-flex;
             align-items: center;
@@ -204,7 +182,6 @@
             accent-color: #0d6efd;
         }
 
-        /* Single Week Batch Zip Button */
         .guc-zip-btn {
             display: inline-flex;
             align-items: center;
@@ -271,7 +248,7 @@
             background-color: #157347;
         }
 
-        /* Top Dropdown Container */
+        /* Dropdown Toolbar & Menu */
         .guc-dropdown-container {
             position: relative;
             display: inline-block;
@@ -307,7 +284,6 @@
             transform: rotate(180deg);
         }
 
-        /* Collapsible Dropdown Menu */
         .guc-dropdown-menu {
             display: none;
             position: absolute;
@@ -321,14 +297,9 @@
             box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
             padding: 14px;
             z-index: 10000;
-            animation: fadeInDown 0.2s ease-out forwards;
         }
         .guc-dropdown-container.open .guc-dropdown-menu {
             display: block;
-        }
-        @keyframes fadeInDown {
-            from { opacity: 0; transform: translateY(-8px); }
-            to { opacity: 1; transform: translateY(0); }
         }
 
         .guc-dd-header {
@@ -365,7 +336,6 @@
             color: #212529;
         }
 
-        /* Scrollable List of Weeks */
         .guc-dd-weeks-list {
             max-height: 250px;
             overflow-y: auto;
@@ -411,7 +381,6 @@
             border-radius: 10px;
         }
 
-        /* Dropdown Footer Download Button */
         .guc-dd-download-btn {
             width: 100%;
             padding: 10px;
@@ -708,7 +677,6 @@
                 }
             }, CONFIG.REQUEST_TIMEOUT_MS);
 
-            // Primary: GM_xmlhttpRequest with Referer header
             if (typeof GM_xmlhttpRequest !== 'undefined') {
                 try {
                     GM_xmlhttpRequest({
@@ -747,7 +715,6 @@
                 }
             }
 
-            // Fallback: window.fetch
             tryFetchFallback(url, resolve, reject, timer);
         });
     }
@@ -974,7 +941,6 @@
             return;
         }
 
-        // Build ZIP synchronously
         if (statusBtn) statusBtn.innerHTML = `📦 Zipping (${completed} files)...`;
         updateProgressModal(95, `Building ZIP archive (${completed} files)...`);
 
@@ -1018,70 +984,109 @@
     }
 
     // =========================================================================
-    // FEATURE 3: COLLAPSIBLE DROPDOWN SELECTION MENU
+    // FEATURE 3: NON-GLITCHING COLLAPSIBLE DROPDOWN SELECTION MENU
     // =========================================================================
 
-    const detectedWeeks = [];
+    const detectedWeeksMap = new Map();
     let dropdownContainerEl = null;
 
-    function renderDropdownMenu() {
-        if (!detectedWeeks.length) return;
+    function buildDropdownContainerOnce() {
+        if (dropdownContainerEl) return;
 
-        // Find or create dropdown container
-        if (!dropdownContainerEl) {
-            dropdownContainerEl = document.createElement('div');
-            dropdownContainerEl.className = 'guc-dropdown-container';
-
-            // Insert near top of content
-            const targetContainer = document.querySelector('.container, .container-fluid, #main-content, form') || document.body;
-            const firstHeading = document.querySelector(CONFIG.WEEK_HEADING_SELECTOR) || targetContainer.firstChild;
-
-            if (firstHeading && firstHeading.parentNode) {
-                firstHeading.parentNode.insertBefore(dropdownContainerEl, firstHeading);
-            } else {
-                targetContainer.prepend(dropdownContainerEl);
-            }
-
-            // Close dropdown when clicking outside
-            document.addEventListener('click', (e) => {
-                if (dropdownContainerEl && !dropdownContainerEl.contains(e.target)) {
-                    dropdownContainerEl.classList.remove('open');
-                }
-            });
-        }
-
-        const selectedWeeks = detectedWeeks.filter(w => w.selected);
-        const totalSelectedFiles = selectedWeeks.reduce((sum, w) => sum + w.items.length, 0);
+        dropdownContainerEl = document.createElement('div');
+        dropdownContainerEl.className = 'guc-dropdown-container';
 
         dropdownContainerEl.innerHTML = `
             <button type="button" class="guc-dropdown-toggle-btn" id="guc-dd-toggle">
                 <span>📑 Select Weeks to Download</span>
-                <span class="guc-zip-count-badge" id="guc-dd-badge">${selectedWeeks.length} selected (${totalSelectedFiles} files)</span>
+                <span class="guc-zip-count-badge" id="guc-dd-badge">0 selected (0 files)</span>
                 <span class="guc-dropdown-arrow">▼</span>
             </button>
             <div class="guc-dropdown-menu">
                 <div class="guc-dd-header">
-                    <span class="guc-dd-title">Select Weeks (${detectedWeeks.length} total)</span>
+                    <span class="guc-dd-title" id="guc-dd-header-title">Select Weeks</span>
                     <div class="guc-dd-quick-actions">
                         <button type="button" class="guc-dd-btn-sm" id="guc-dd-select-all">Select All</button>
                         <button type="button" class="guc-dd-btn-sm" id="guc-dd-clear">Clear</button>
                     </div>
                 </div>
                 <div class="guc-dd-weeks-list" id="guc-dd-list"></div>
-                <button type="button" class="guc-dd-download-btn" id="guc-dd-download-btn" ${selectedWeeks.length === 0 ? 'disabled' : ''}>
-                    📦 Download Selected (${selectedWeeks.length} Weeks - ${totalSelectedFiles} Files) as ZIP
+                <button type="button" class="guc-dd-download-btn" id="guc-dd-download-btn" disabled>
+                    📦 Download Selected as ZIP
                 </button>
             </div>
         `;
 
+        const targetContainer = document.querySelector('.container, .container-fluid, #main-content, form') || document.body;
+        const firstHeading = document.querySelector(CONFIG.WEEK_HEADING_SELECTOR) || targetContainer.firstChild;
+
+        if (firstHeading && firstHeading.parentNode) {
+            firstHeading.parentNode.insertBefore(dropdownContainerEl, firstHeading);
+        } else {
+            targetContainer.prepend(dropdownContainerEl);
+        }
+
+        // Toggle dropdown open/close on click
         const toggleBtn = dropdownContainerEl.querySelector('#guc-dd-toggle');
-        toggleBtn.onclick = (e) => {
+        toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             dropdownContainerEl.classList.toggle('open');
-        };
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (dropdownContainerEl && !dropdownContainerEl.contains(e.target)) {
+                dropdownContainerEl.classList.remove('open');
+            }
+        });
+
+        // Quick Actions
+        dropdownContainerEl.querySelector('#guc-dd-select-all').addEventListener('click', (e) => {
+            e.stopPropagation();
+            detectedWeeksMap.forEach(w => {
+                w.selected = true;
+                if (w.onPageCheckbox) w.onPageCheckbox.checked = true;
+                if (w.dropdownCheckbox) w.dropdownCheckbox.checked = true;
+            });
+            updateDropdownCounts();
+        });
+
+        dropdownContainerEl.querySelector('#guc-dd-clear').addEventListener('click', (e) => {
+            e.stopPropagation();
+            detectedWeeksMap.forEach(w => {
+                w.selected = false;
+                if (w.onPageCheckbox) w.onPageCheckbox.checked = false;
+                if (w.dropdownCheckbox) w.dropdownCheckbox.checked = false;
+            });
+            updateDropdownCounts();
+        });
+
+        // Download Action
+        dropdownContainerEl.querySelector('#guc-dd-download-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdownContainerEl.classList.remove('open');
+            downloadSelectedWeeks();
+        });
+    }
+
+    function syncDropdownItems() {
+        if (!detectedWeeksMap.size) return;
+        buildDropdownContainerOnce();
 
         const listEl = dropdownContainerEl.querySelector('#guc-dd-list');
-        detectedWeeks.forEach(week => {
+        const headerTitle = dropdownContainerEl.querySelector('#guc-dd-header-title');
+        if (headerTitle) headerTitle.textContent = `Select Weeks (${detectedWeeksMap.size} total)`;
+
+        detectedWeeksMap.forEach((week, title) => {
+            if (week.dropdownRow && week.dropdownRow.parentNode) {
+                // Row already exists, just sync state
+                if (week.dropdownCheckbox) {
+                    week.dropdownCheckbox.checked = !!week.selected;
+                }
+                return;
+            }
+
+            // Create row once
             const itemRow = document.createElement('div');
             itemRow.className = 'guc-dd-week-item';
 
@@ -1094,67 +1099,35 @@
             `;
 
             const chk = itemRow.querySelector('input');
-            chk.onchange = (e) => {
+            week.dropdownCheckbox = chk;
+            week.dropdownRow = itemRow;
+
+            chk.addEventListener('change', (e) => {
                 e.stopPropagation();
                 week.selected = chk.checked;
                 if (week.onPageCheckbox) week.onPageCheckbox.checked = chk.checked;
                 updateDropdownCounts();
-            };
+            });
 
-            itemRow.onclick = (e) => {
+            itemRow.addEventListener('click', (e) => {
                 if (e.target !== chk) {
                     chk.checked = !chk.checked;
                     week.selected = chk.checked;
                     if (week.onPageCheckbox) week.onPageCheckbox.checked = chk.checked;
                     updateDropdownCounts();
                 }
-            };
+            });
 
             listEl.appendChild(itemRow);
         });
 
-        // Quick Actions
-        dropdownContainerEl.querySelector('#guc-dd-select-all').onclick = (e) => {
-            e.stopPropagation();
-            detectedWeeks.forEach(w => {
-                w.selected = true;
-                if (w.onPageCheckbox) w.onPageCheckbox.checked = true;
-            });
-            refreshDropdownItems();
-            updateDropdownCounts();
-        };
-
-        dropdownContainerEl.querySelector('#guc-dd-clear').onclick = (e) => {
-            e.stopPropagation();
-            detectedWeeks.forEach(w => {
-                w.selected = false;
-                if (w.onPageCheckbox) w.onPageCheckbox.checked = false;
-            });
-            refreshDropdownItems();
-            updateDropdownCounts();
-        };
-
-        // Download Action
-        dropdownContainerEl.querySelector('#guc-dd-download-btn').onclick = (e) => {
-            e.stopPropagation();
-            dropdownContainerEl.classList.remove('open');
-            downloadSelectedWeeks();
-        };
-    }
-
-    function refreshDropdownItems() {
-        if (!dropdownContainerEl) return;
-        const checkboxes = dropdownContainerEl.querySelectorAll('#guc-dd-list .guc-week-checkbox');
-        checkboxes.forEach((chk, idx) => {
-            if (detectedWeeks[idx]) {
-                chk.checked = !!detectedWeeks[idx].selected;
-            }
-        });
+        updateDropdownCounts();
     }
 
     function updateDropdownCounts() {
         if (!dropdownContainerEl) return;
-        const selected = detectedWeeks.filter(w => w.selected);
+        const allWeeks = Array.from(detectedWeeksMap.values());
+        const selected = allWeeks.filter(w => w.selected);
         const totalFiles = selected.reduce((sum, w) => sum + w.items.length, 0);
 
         const badge = dropdownContainerEl.querySelector('#guc-dd-badge');
@@ -1168,7 +1141,7 @@
     }
 
     function downloadSelectedWeeks() {
-        const selected = detectedWeeks.filter(w => w.selected);
+        const selected = Array.from(detectedWeeksMap.values()).filter(w => w.selected);
         if (selected.length === 0) {
             alert('Please select at least one week from the dropdown menu.');
             return;
@@ -1248,15 +1221,23 @@
                 const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
                 const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
 
-                // Week entry object
-                const weekEntry = {
-                    title: rawTitle,
-                    items: filteredItems,
-                    selected: false,
-                    onPageCheckbox: null
-                };
+                // Get or create unique week entry in Map
+                let weekEntry = detectedWeeksMap.get(rawTitle);
+                if (!weekEntry) {
+                    weekEntry = {
+                        title: rawTitle,
+                        items: filteredItems,
+                        selected: false,
+                        onPageCheckbox: null,
+                        dropdownCheckbox: null,
+                        dropdownRow: null
+                    };
+                    detectedWeeksMap.set(rawTitle, weekEntry);
+                } else {
+                    weekEntry.items = filteredItems;
+                }
 
-                // 1. Checkbox for selection directly beside heading
+                // 1. Checkbox directly beside heading
                 const selectLabel = document.createElement('label');
                 selectLabel.className = 'guc-week-select-label';
                 selectLabel.title = `Select ${rawTitle} for multi-week batch download`;
@@ -1264,9 +1245,11 @@
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.className = 'guc-week-checkbox';
+                checkbox.checked = !!weekEntry.selected;
+
                 checkbox.addEventListener('change', () => {
                     weekEntry.selected = checkbox.checked;
-                    refreshDropdownItems();
+                    if (weekEntry.dropdownCheckbox) weekEntry.dropdownCheckbox.checked = checkbox.checked;
                     updateDropdownCounts();
                 });
 
@@ -1291,17 +1274,15 @@
                 });
 
                 heading.appendChild(zipBtn);
-
-                detectedWeeks.push(weekEntry);
             }
         });
 
-        // Render / refresh dropdown menu at the top
-        renderDropdownMenu();
+        // Synchronize dropdown without re-rendering or glitching
+        syncDropdownItems();
     }
 
     // =========================================================================
-    // INITIALIZATION & MUTATION OBSERVER
+    // INITIALIZATION & SAFE MUTATION OBSERVER
     // =========================================================================
 
     function runAll() {
@@ -1315,25 +1296,41 @@
         runAll();
     }
 
+    // Safe Mutation Observer that ignores our own UI mutations
     let debounceTimer = null;
     const observer = new MutationObserver((mutations) => {
         let shouldUpdate = false;
         for (const mut of mutations) {
-            if (mut.addedNodes.length > 0) {
-                shouldUpdate = true;
-                break;
+            // Ignore mutations created by our own userscript elements
+            if (mut.target && (
+                mut.target.closest?.('.guc-dropdown-container') ||
+                mut.target.closest?.('.guc-progress-modal') ||
+                mut.target.classList?.contains('guc-zip-btn') ||
+                mut.target.classList?.contains('guc-week-select-label')
+            )) {
+                continue;
             }
+
+            if (mut.addedNodes.length > 0) {
+                for (const node of mut.addedNodes) {
+                    if (node.nodeType === 1 && !node.classList?.contains('guc-dropdown-container') && !node.classList?.contains('guc-progress-modal')) {
+                        shouldUpdate = true;
+                        break;
+                    }
+                }
+            }
+            if (shouldUpdate) break;
         }
 
         if (shouldUpdate) {
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 runAll();
-            }, 300);
+            }, 350);
         }
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.7.0 initialized.');
+    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.8.0 initialized.');
 })();
