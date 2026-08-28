@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         GUC CMS Content Renamer & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.4.0
+// @version      1.5.0
 // @description  Renames GUC CMS file downloads to match content titles and adds 1-click batch ZIP downloads per week beside the week heading.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @icon         https://cms.guc.edu.eg/favicon.ico
-// @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
 // @grant        GM_addStyle
@@ -46,17 +45,129 @@
         INCLUDE_VOD_IN_ZIP: true,
 
         // Concurrent download limit for batch fetching
-        CONCURRENCY_LIMIT: 2,
+        CONCURRENCY_LIMIT: 3,
 
         // Request timeout in milliseconds (30 seconds)
         REQUEST_TIMEOUT_MS: 30000
     };
 
     // =========================================================================
+    // BUILT-IN PURE JS SYNCHRONOUS ZIP GENERATOR (Zero Hangs, Zero Dependencies)
+    // =========================================================================
+
+    const CRC_TABLE = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        CRC_TABLE[i] = c;
+    }
+
+    function calculateCRC32(buf) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < buf.length; i++) {
+            crc = CRC_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    /**
+     * Builds a standard uncompressed ZIP file Uint8Array in memory.
+     * Takes an array of objects: [{ name: "FileName.pdf", data: ArrayBuffer | Uint8Array }, ...]
+     */
+    function buildZipSynchronous(files) {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const cdEntries = [];
+        let offset = 0;
+
+        for (const file of files) {
+            const nameBytes = encoder.encode(file.name);
+            const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data);
+            const crc = calculateCRC32(data);
+            const size = data.length;
+
+            // Local header (30 bytes + filename)
+            const localHeader = new Uint8Array(30 + nameBytes.length);
+            const lv = new DataView(localHeader.buffer);
+            lv.setUint32(0, 0x04034b50, true); // Local header signature
+            lv.setUint16(4, 20, true);         // Version needed (2.0)
+            lv.setUint16(6, 0x0800, true);     // Flags (UTF-8)
+            lv.setUint16(8, 0, true);          // Compression (0 = STORE)
+            lv.setUint16(10, 0x5460, true);    // Mod time (10:35 AM)
+            lv.setUint16(12, 0x5821, true);    // Mod date (2024-01-01)
+            lv.setUint32(14, crc, true);       // CRC32
+            lv.setUint32(18, size, true);      // Compressed size
+            lv.setUint32(22, size, true);      // Uncompressed size
+            lv.setUint16(26, nameBytes.length, true); // Name length
+            lv.setUint16(28, 0, true);         // Extra field length
+            localHeader.set(nameBytes, 30);
+
+            parts.push(localHeader);
+            parts.push(data);
+
+            // Central Directory Entry (46 bytes + filename)
+            const cdEntry = new Uint8Array(46 + nameBytes.length);
+            const cv = new DataView(cdEntry.buffer);
+            cv.setUint32(0, 0x02014b50, true); // Central header signature
+            cv.setUint16(4, 20, true);         // Version made by
+            cv.setUint16(6, 20, true);         // Version needed
+            cv.setUint16(8, 0x0800, true);     // Flags (UTF-8)
+            cv.setUint16(10, 0, true);         // Compression (STORE)
+            cv.setUint16(12, 0x5460, true);    // Mod time
+            cv.setUint16(14, 0x5821, true);    // Mod date
+            cv.setUint32(16, crc, true);       // CRC32
+            cv.setUint32(20, size, true);      // Compressed size
+            cv.setUint32(24, size, true);      // Uncompressed size
+            cv.setUint16(28, nameBytes.length, true); // Name length
+            cv.setUint16(30, 0, true);         // Extra field length
+            cv.setUint16(32, 0, true);         // Comment length
+            cv.setUint16(34, 0, true);         // Disk start
+            cv.setUint16(36, 0, true);         // Internal attr
+            cv.setUint32(38, 0x81a40000, true);// External attr (-rw-r--r--)
+            cv.setUint32(42, offset, true);    // Local header offset
+            cdEntry.set(nameBytes, 46);
+
+            cdEntries.push(cdEntry);
+            offset += localHeader.length + data.length;
+        }
+
+        const cdOffset = offset;
+        let cdSize = 0;
+        for (const cd of cdEntries) {
+            parts.push(cd);
+            cdSize += cd.length;
+        }
+
+        // End of central directory record (22 bytes)
+        const eocd = new Uint8Array(22);
+        const ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054b50, true); // EOCD signature
+        ev.setUint16(4, 0, true);          // Disk number
+        ev.setUint16(6, 0, true);          // Disk with CD
+        ev.setUint16(8, files.length, true);// Disk entries
+        ev.setUint16(10, files.length, true);// Total entries
+        ev.setUint32(12, cdSize, true);    // CD size
+        ev.setUint32(16, cdOffset, true);  // CD offset
+        ev.setUint16(20, 0, true);         // Comment length
+        parts.push(eocd);
+
+        let totalLength = parts.reduce((acc, p) => acc + p.length, 0);
+        const fullZipBuffer = new Uint8Array(totalLength);
+        let currentPos = 0;
+        for (const p of parts) {
+            fullZipBuffer.set(p, currentPos);
+            currentPos += p.length;
+        }
+
+        return fullZipBuffer;
+    }
+
+    // =========================================================================
     // STYLES
     // =========================================================================
     const STYLES = `
-        /* Align week heading container nicely with the zip button */
         .guc-week-heading-wrapper {
             display: inline-flex !important;
             align-items: center !important;
@@ -64,7 +175,6 @@
             gap: 12px !important;
         }
 
-        /* Batch Zip Button placed beside Week heading */
         .guc-zip-btn {
             display: inline-flex;
             align-items: center;
@@ -104,15 +214,8 @@
             background: linear-gradient(135deg, #198754, #157347) !important;
             border-color: #146c43 !important;
             cursor: pointer !important;
-            animation: pulse-green 1.5s infinite;
-        }
-        @keyframes pulse-green {
-            0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.5); }
-            70% { box-shadow: 0 0 0 8px rgba(25, 135, 84, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
         }
 
-        /* Badge inside Zip Button */
         .guc-zip-count-badge {
             background: rgba(255, 255, 255, 0.28);
             padding: 2px 6px;
@@ -121,7 +224,6 @@
             font-weight: 700;
         }
 
-        /* Dedicated VoD Download Button */
         .guc-vod-dl-btn {
             margin-left: 6px;
             padding: 6px 12px;
@@ -140,7 +242,6 @@
             background-color: #157347;
         }
 
-        /* Floating Progress Modal */
         .guc-progress-modal {
             position: fixed;
             bottom: 24px;
@@ -271,7 +372,7 @@
         if (actionHtml !== null && paction) paction.innerHTML = actionHtml;
     }
 
-    function closeProgressModal(delayMs = 4000) {
+    function closeProgressModal(delayMs = 5000) {
         setTimeout(() => {
             if (progressModalEl && progressModalEl.parentNode) {
                 progressModalEl.parentNode.removeChild(progressModalEl);
@@ -333,7 +434,6 @@
         const contentId = downloadLink.getAttribute('data-contentid') || '';
         const ext = extractExtensionFromUrl(rawHref);
 
-        // Title extraction
         const titleStrong = card.querySelector(CONFIG.TITLE_STRONG_SELECTOR);
         const titleContainer = card.querySelector(CONFIG.TITLE_CONTAINER_SELECTOR);
 
@@ -404,9 +504,6 @@
     // RELIABLE BINARY FETCHING
     // =========================================================================
 
-    /**
-     * Downloads file as ArrayBuffer using GM_xmlhttpRequest first, with window.fetch fallback.
-     */
     function fetchFileArrayBuffer(url) {
         return new Promise((resolve, reject) => {
             let finished = false;
@@ -417,7 +514,7 @@
                 }
             }, CONFIG.REQUEST_TIMEOUT_MS);
 
-            // Primary: GM_xmlhttpRequest with Referer header to prevent ASP.NET anti-hotlink blocks
+            // Primary: GM_xmlhttpRequest with Referer header
             if (typeof GM_xmlhttpRequest !== 'undefined') {
                 try {
                     GM_xmlhttpRequest({
@@ -441,7 +538,6 @@
                         },
                         onerror: (err) => {
                             if (finished) return;
-                            // Fallback to fetch if GM_xmlhttpRequest errored
                             tryFetchFallback(url, resolve, reject, timer);
                         },
                         ontimeout: () => {
@@ -453,7 +549,7 @@
                     });
                     return;
                 } catch (gmErr) {
-                    console.warn('[GUC CMS] GM_xmlhttpRequest invocation error, falling back to fetch:', gmErr);
+                    console.warn('[GUC CMS] GM_xmlhttpRequest error, using fetch fallback:', gmErr);
                 }
             }
 
@@ -478,13 +574,9 @@
             });
     }
 
-    /**
-     * Triggers file download using GM_download or anchor element.
-     */
     function triggerDownloadBlob(blob, filename) {
         const blobUrl = URL.createObjectURL(blob);
 
-        // Attempt 1: GM_download if available
         if (typeof GM_download === 'function') {
             try {
                 GM_download({
@@ -504,7 +596,6 @@
             }
         }
 
-        // Attempt 2: Standard anchor click
         fallbackAnchorClick(blobUrl, filename);
         return blobUrl;
     }
@@ -617,12 +708,6 @@
             return;
         }
 
-        const JSZipLib = (typeof JSZip !== 'undefined') ? JSZip : window.JSZip;
-        if (!JSZipLib) {
-            alert('JSZip library failed to load. Please refresh the page.');
-            return;
-        }
-
         const originalBtnHtml = statusBtn.innerHTML;
         statusBtn.classList.add('busy');
         statusBtn.disabled = true;
@@ -630,22 +715,21 @@
         showProgressModal(sectionTitle);
         updateProgressModal(5, `Found ${items.length} files. Starting download...`);
 
-        const zip = new JSZipLib();
         const deduplicated = deduplicateFilenames(items);
         const total = deduplicated.length;
+        const downloadedBuffers = [];
         let completed = 0;
         let failedCount = 0;
 
         console.log(`[GUC CMS] Starting batch ZIP for "${sectionTitle}" (${total} files)...`);
 
-        // Concurrent downloader with live progress updates
         let currentIndex = 0;
         async function worker() {
             while (currentIndex < deduplicated.length) {
                 const itemIndex = currentIndex++;
                 const item = deduplicated[itemIndex];
 
-                const currentPercent = 10 + Math.round((completed / total) * 75);
+                const currentPercent = 10 + Math.round((completed / total) * 80);
                 statusBtn.innerHTML = `⏳ (${completed + 1}/${total}) ${item.uniqueFilename.substring(0, 14)}...`;
                 updateProgressModal(
                     currentPercent,
@@ -660,9 +744,12 @@
                         throw new Error('Received empty file buffer (0 bytes)');
                     }
 
-                    zip.file(item.uniqueFilename, arrayBuffer, { binary: true });
+                    downloadedBuffers.push({
+                        name: item.uniqueFilename,
+                        data: arrayBuffer
+                    });
                     completed++;
-                    console.log(`[GUC CMS] Added to ZIP (${completed}/${total}): ${item.uniqueFilename}`);
+                    console.log(`[GUC CMS] Successfully loaded (${completed}/${total}): ${item.uniqueFilename}`);
                 } catch (err) {
                     console.error(`[GUC CMS] Failed to fetch "${item.uniqueFilename}":`, err);
                     failedCount++;
@@ -679,7 +766,7 @@
         await Promise.all(workers);
 
         if (completed === 0) {
-            updateProgressModal(100, `❌ Failed to download any files for "${sectionTitle}". Check console for details.`);
+            updateProgressModal(100, `❌ Failed to download any files for "${sectionTitle}".`);
             statusBtn.innerHTML = '❌ Download Failed';
             setTimeout(() => {
                 statusBtn.innerHTML = originalBtnHtml;
@@ -689,23 +776,18 @@
             return;
         }
 
-        // Packaging stage
+        // Synchronously build the ZIP in memory (instant, 0ms lag, no stream hanging!)
         statusBtn.innerHTML = `📦 Zipping (${completed} files)...`;
-        updateProgressModal(90, `Building ZIP archive (${completed} files)...`);
-        console.log(`[GUC CMS] Generating ZIP blob for ${completed} items...`);
+        updateProgressModal(95, `Building ZIP archive (${completed} files)...`);
+        console.log(`[GUC CMS] Building synchronous ZIP for ${completed} items...`);
 
         try {
-            const zipBlob = await zip.generateAsync(
-                { type: 'blob', compression: 'STORE' },
-                (metadata) => {
-                    const pct = 90 + Math.round((metadata.percent / 100) * 10);
-                    updateProgressModal(pct, `Packaging ZIP: ${Math.round(metadata.percent)}%`);
-                }
-            );
-
+            const zipBytes = buildZipSynchronous(downloadedBuffers);
+            const zipBlob = new Blob([zipBytes], { type: 'application/zip' });
             const cleanZipName = `${sanitizeFilename(sectionTitle)} - GUC CMS.zip`;
             const blobSizeMb = (zipBlob.size / (1024 * 1024)).toFixed(2);
-            console.log(`[GUC CMS] ZIP blob ready: ${blobSizeMb} MB`);
+
+            console.log(`[GUC CMS] ZIP built instantly! Size: ${blobSizeMb} MB (${zipBlob.size} bytes)`);
 
             // Trigger download
             const blobUrl = triggerDownloadBlob(zipBlob, cleanZipName);
@@ -723,8 +805,8 @@
 
             closeProgressModal(8000);
         } catch (zipErr) {
-            console.error('[GUC CMS] Error generating ZIP:', zipErr);
-            updateProgressModal(100, `❌ ZIP packaging error: ${zipErr.message}`);
+            console.error('[GUC CMS] Error building ZIP:', zipErr);
+            updateProgressModal(100, `❌ ZIP building error: ${zipErr.message}`);
             statusBtn.innerHTML = '❌ ZIP Error';
         } finally {
             setTimeout(() => {
@@ -841,5 +923,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.4.0 initialized.');
+    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.5.0 initialized.');
 })();
