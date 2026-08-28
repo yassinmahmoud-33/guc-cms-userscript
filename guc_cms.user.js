@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         GUC CMS Content Renamer & Batch Downloader
+// @name         GUC CMS Modern UI & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.8.0
-// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and a smooth collapsible dropdown menu to select and batch download multiple weeks.
+// @version      2.0.0
+// @description  Complete modern UI redesign for GUC CMS with collapsible weeks, clean cards, quick navigation, content badges, and 1-click batch ZIP downloads.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -35,149 +35,305 @@
     };
 
     // =========================================================================
-    // BUILT-IN PURE JS SYNCHRONOUS ZIP GENERATOR (Zero Hangs, Subfolder Support)
+    // MODERN UI THEME & STYLES (Clean Modern Design)
     // =========================================================================
-
-    const CRC_TABLE = new Uint32Array(256);
-    for (let i = 0; i < 256; i++) {
-        let c = i;
-        for (let k = 0; k < 8; k++) {
-            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-        }
-        CRC_TABLE[i] = c;
-    }
-
-    function calculateCRC32(buf) {
-        let crc = 0xFFFFFFFF;
-        for (let i = 0; i < buf.length; i++) {
-            crc = CRC_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
-        }
-        return (crc ^ 0xFFFFFFFF) >>> 0;
-    }
-
-    function buildZipSynchronous(files) {
-        const encoder = new TextEncoder();
-        const parts = [];
-        const cdEntries = [];
-        let offset = 0;
-
-        for (const file of files) {
-            const nameBytes = encoder.encode(file.name);
-            const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data);
-            const crc = calculateCRC32(data);
-            const size = data.length;
-
-            // Local header (30 bytes + filename)
-            const localHeader = new Uint8Array(30 + nameBytes.length);
-            const lv = new DataView(localHeader.buffer);
-            lv.setUint32(0, 0x04034b50, true);
-            lv.setUint16(4, 20, true);
-            lv.setUint16(6, 0x0800, true);
-            lv.setUint16(8, 0, true);
-            lv.setUint16(10, 0x5460, true);
-            lv.setUint16(12, 0x5821, true);
-            lv.setUint32(14, crc, true);
-            lv.setUint32(18, size, true);
-            lv.setUint32(22, size, true);
-            lv.setUint16(26, nameBytes.length, true);
-            lv.setUint16(28, 0, true);
-            localHeader.set(nameBytes, 30);
-
-            parts.push(localHeader);
-            parts.push(data);
-
-            // Central Directory Entry (46 bytes + filename)
-            const cdEntry = new Uint8Array(46 + nameBytes.length);
-            const cv = new DataView(cdEntry.buffer);
-            cv.setUint32(0, 0x02014b50, true);
-            cv.setUint16(4, 20, true);
-            cv.setUint16(6, 20, true);
-            cv.setUint16(8, 0x0800, true);
-            cv.setUint16(10, 0, true);
-            cv.setUint16(12, 0x5460, true);
-            cv.setUint16(14, 0x5821, true);
-            cv.setUint32(16, crc, true);
-            cv.setUint32(20, size, true);
-            cv.setUint32(24, size, true);
-            cv.setUint16(28, nameBytes.length, true);
-            cv.setUint16(30, 0, true);
-            cv.setUint16(32, 0, true);
-            cv.setUint16(34, 0, true);
-            cv.setUint16(36, 0, true);
-            cv.setUint32(38, 0x81a40000, true);
-            cv.setUint32(42, offset, true);
-            cdEntry.set(nameBytes, 46);
-
-            cdEntries.push(cdEntry);
-            offset += localHeader.length + data.length;
+    const MODERN_STYLES = `
+        /* Root & Global Typography */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif !important;
+            background-color: #f1f5f9 !important;
+            color: #1e293b !important;
+            line-height: 1.5 !important;
         }
 
-        const cdOffset = offset;
-        let cdSize = 0;
-        for (const cd of cdEntries) {
-            parts.push(cd);
-            cdSize += cd.length;
+        /* Top Sticky Master Toolbar */
+        .guc-modern-toolbar {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 20px;
+            margin: 18px 0;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .guc-toolbar-top-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .guc-toolbar-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .guc-toolbar-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
 
-        // End of central directory record (22 bytes)
-        const eocd = new Uint8Array(22);
-        const ev = new DataView(eocd.buffer);
-        ev.setUint32(0, 0x06054b50, true);
-        ev.setUint16(4, 0, true);
-        ev.setUint16(6, 0, true);
-        ev.setUint16(8, files.length, true);
-        ev.setUint16(10, files.length, true);
-        ev.setUint32(12, cdSize, true);
-        ev.setUint32(16, cdOffset, true);
-        ev.setUint16(20, 0, true);
-        parts.push(eocd);
-
-        let totalLength = parts.reduce((acc, p) => acc + p.length, 0);
-        const fullZipBuffer = new Uint8Array(totalLength);
-        let currentPos = 0;
-        for (const p of parts) {
-            fullZipBuffer.set(p, currentPos);
-            currentPos += p.length;
+        /* Quick Jump Week Pill Bar */
+        .guc-quick-jump-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding-top: 10px;
+            border-top: 1px solid #f1f5f9;
+        }
+        .guc-jump-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .guc-jump-pill {
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #334155 !important;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-decoration: none !important;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .guc-jump-pill:hover {
+            background: #0d6efd;
+            border-color: #0d6efd;
+            color: #ffffff !important;
+            transform: translateY(-1px);
         }
 
-        return fullZipBuffer;
-    }
+        /* Toolbar Buttons */
+        .guc-btn-outline {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #334155 !important;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .guc-btn-outline:hover {
+            background: #f1f5f9;
+            border-color: #94a3b8;
+            color: #0f172a !important;
+        }
 
-    // =========================================================================
-    // STYLES
-    // =========================================================================
-    const STYLES = `
-        .guc-week-heading-wrapper {
-            display: inline-flex !important;
+        /* Modernized Week Section Cards */
+        .guc-week-section-wrapper {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+            transition: box-shadow 0.2s ease;
+        }
+        .guc-week-section-wrapper:hover {
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+        }
+
+        /* Week Header */
+        .guc-modern-week-header {
+            padding: 16px 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s ease;
+        }
+        .guc-modern-week-header:hover {
+            background: #f1f5f9;
+        }
+        .guc-week-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .guc-week-collapse-chevron {
+            font-size: 14px;
+            font-weight: 800;
+            color: #64748b;
+            transition: transform 0.25s ease;
+            display: inline-block;
+        }
+        .guc-week-collapsed .guc-week-collapse-chevron {
+            transform: rotate(-90deg);
+        }
+        .guc-week-title-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0 !important;
+        }
+        .guc-week-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Week Body (Collapsible) */
+        .guc-week-body-container {
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        .guc-week-collapsed .guc-week-body-container {
+            display: none !important;
+        }
+
+        /* Modernized Item Card (.card.mb-4) */
+        div.card.mb-4 {
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 10px !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+            margin-bottom: 16px !important;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
+        }
+        div.card.mb-4:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.07) !important;
+            border-color: #cbd5e1 !important;
+        }
+        div.card.mb-4 .card-body {
+            padding: 16px 20px !important;
+        }
+
+        /* Content Title & Modern Badge */
+        div[id^="content"] {
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            color: #1e293b !important;
+            margin-bottom: 12px !important;
+            display: flex !important;
             align-items: center !important;
             flex-wrap: wrap !important;
-            gap: 10px !important;
+            gap: 8px !important;
+        }
+        div[id^="content"] strong {
+            color: #0f172a !important;
+            font-size: 15px !important;
+            font-weight: 700 !important;
+        }
+        .guc-content-type-badge {
+            background: #e0f2fe !important;
+            color: #0369a1 !important;
+            padding: 2px 8px !important;
+            border-radius: 6px !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.3px !important;
+            border: 1px solid #bae6fd !important;
+            text-transform: uppercase !important;
         }
 
+        /* Content Action Buttons Styling */
+        a.contentbtn.btn-primary, button.contentbtn.btn-primary {
+            background: linear-gradient(135deg, #0d6efd, #0b5ed7) !important;
+            border: 1px solid #0a58ca !important;
+            border-radius: 6px !important;
+            padding: 6px 14px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 2px 4px rgba(13, 110, 253, 0.15) !important;
+            transition: all 0.15s ease !important;
+        }
+        a.contentbtn.btn-primary:hover, button.contentbtn.btn-primary:hover {
+            background: linear-gradient(135deg, #0b5ed7, #0a58ca) !important;
+            box-shadow: 0 4px 8px rgba(13, 110, 253, 0.25) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* Watch Video Button */
+        input.vodbutton, .vodbutton {
+            background: linear-gradient(135deg, #6f42c1, #59359a) !important;
+            border: 1px solid #59359a !important;
+            color: #ffffff !important;
+            border-radius: 6px !important;
+            padding: 6px 14px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 2px 4px rgba(111, 66, 193, 0.15) !important;
+            transition: all 0.15s ease !important;
+            margin-left: 6px !important;
+        }
+        input.vodbutton:hover, .vodbutton:hover {
+            background: linear-gradient(135deg, #59359a, #4d2d85) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* Cleaned Up Complaint Button */
+        input.complaint, .complaint {
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #64748b !important;
+            border-radius: 6px !important;
+            padding: 5px 10px !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            margin-left: 6px !important;
+            transition: all 0.15s ease !important;
+            box-shadow: none !important;
+        }
+        input.complaint:hover, .complaint:hover {
+            background: #fee2e2 !important;
+            border-color: #fca5a5 !important;
+            color: #dc2626 !important;
+        }
+
+        /* De-clutter Rating Stars (Subtle) */
+        .rating, [class*="rating"] {
+            opacity: 0.5;
+            transition: opacity 0.2s ease;
+        }
+        .rating:hover, [class*="rating"]:hover {
+            opacity: 1;
+        }
+
+        /* Checkbox & Zip Button in Week Header */
         .guc-week-select-label {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            margin-left: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            color: #495057;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
             cursor: pointer;
             user-select: none;
-            background: #f8f9fa;
-            border: 1px solid #ced4da;
-            padding: 4px 10px;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 5px 10px;
             border-radius: 6px;
             transition: all 0.15s ease;
         }
         .guc-week-select-label:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
+            background: #f1f5f9;
+            border-color: #94a3b8;
         }
         .guc-week-checkbox {
             cursor: pointer;
-            width: 16px;
-            height: 16px;
+            width: 15px;
+            height: 15px;
             margin: 0;
             accent-color: #0d6efd;
         }
@@ -187,46 +343,32 @@
             align-items: center;
             gap: 6px;
             padding: 5px 12px;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
-            line-height: 1.4;
             color: #ffffff !important;
             background: linear-gradient(135deg, #0d6efd, #0b5ed7);
             border: 1px solid #0a58ca;
             border-radius: 6px;
             cursor: pointer;
             box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
-            transition: all 0.2s ease-in-out;
+            transition: all 0.15s ease-in-out;
             text-decoration: none !important;
-            vertical-align: middle;
         }
         .guc-zip-btn:hover {
             background: linear-gradient(135deg, #0b5ed7, #0a58ca);
-            box-shadow: 0 4px 8px rgba(13, 110, 253, 0.3);
             transform: translateY(-1px);
         }
-        .guc-zip-btn:active {
-            transform: translateY(0);
-            box-shadow: 0 1px 2px rgba(13, 110, 253, 0.2);
-        }
         .guc-zip-btn:disabled, .guc-zip-btn.busy {
-            background: #6c757d !important;
-            border-color: #5c636a !important;
+            background: #64748b !important;
+            border-color: #475569 !important;
             cursor: not-allowed !important;
             transform: none !important;
-            box-shadow: none !important;
         }
-        .guc-zip-btn.ready {
-            background: linear-gradient(135deg, #198754, #157347) !important;
-            border-color: #146c43 !important;
-            cursor: pointer !important;
-        }
-
         .guc-zip-count-badge {
             background: rgba(255, 255, 255, 0.28);
             padding: 2px 6px;
             border-radius: 10px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
         }
 
@@ -234,11 +376,11 @@
             margin-left: 6px;
             padding: 6px 12px;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             color: #ffffff !important;
             background-color: #198754;
             border: 1px solid #157347;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             transition: background-color 0.15s ease-in-out;
             display: inline-block;
@@ -248,37 +390,35 @@
             background-color: #157347;
         }
 
-        /* Dropdown Toolbar & Menu */
+        /* Top Dropdown Container */
         .guc-dropdown-container {
             position: relative;
             display: inline-block;
-            margin: 15px 0;
             z-index: 1000;
         }
         .guc-dropdown-toggle-btn {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 9px 18px;
-            font-size: 14px;
+            padding: 7px 16px;
+            font-size: 13px;
             font-weight: 600;
             color: #ffffff !important;
             background: linear-gradient(135deg, #0d6efd, #0b5ed7);
             border: 1px solid #0a58ca;
             border-radius: 8px;
             cursor: pointer;
-            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.25);
+            box-shadow: 0 2px 6px rgba(13, 110, 253, 0.25);
             transition: all 0.2s ease;
             user-select: none;
         }
         .guc-dropdown-toggle-btn:hover {
             background: linear-gradient(135deg, #0b5ed7, #0a58ca);
             transform: translateY(-1px);
-            box-shadow: 0 6px 14px rgba(13, 110, 253, 0.35);
         }
         .guc-dropdown-arrow {
             transition: transform 0.25s ease;
-            font-size: 11px;
+            font-size: 10px;
         }
         .guc-dropdown-container.open .guc-dropdown-arrow {
             transform: rotate(180deg);
@@ -292,9 +432,9 @@
             width: 380px;
             max-width: 90vw;
             background: #ffffff;
-            border: 1px solid #dee2e6;
-            border-radius: 10px;
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
             padding: 14px;
             z-index: 10000;
         }
@@ -307,22 +447,22 @@
             align-items: center;
             justify-content: space-between;
             padding-bottom: 10px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid #e2e8f0;
             margin-bottom: 10px;
         }
         .guc-dd-title {
             font-weight: 700;
             font-size: 13px;
-            color: #343a40;
+            color: #0f172a;
         }
         .guc-dd-quick-actions {
             display: flex;
             gap: 6px;
         }
         .guc-dd-btn-sm {
-            background: #f8f9fa;
-            border: 1px solid #ced4da;
-            color: #495057;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            color: #475569;
             padding: 3px 8px;
             border-radius: 4px;
             font-size: 11px;
@@ -331,13 +471,12 @@
             transition: all 0.15s ease;
         }
         .guc-dd-btn-sm:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
-            color: #212529;
+            background: #e2e8f0;
+            color: #0f172a;
         }
 
         .guc-dd-weeks-list {
-            max-height: 250px;
+            max-height: 240px;
             overflow-y: auto;
             margin-bottom: 12px;
             padding-right: 4px;
@@ -346,7 +485,7 @@
             width: 6px;
         }
         .guc-dd-weeks-list::-webkit-scrollbar-thumb {
-            background: #ced4da;
+            background: #cbd5e1;
             border-radius: 3px;
         }
 
@@ -362,7 +501,7 @@
             margin-bottom: 2px;
         }
         .guc-dd-week-item:hover {
-            background: #f1f3f5;
+            background: #f1f5f9;
         }
         .guc-dd-week-left {
             display: flex;
@@ -370,13 +509,13 @@
             gap: 8px;
             font-size: 13px;
             font-weight: 500;
-            color: #212529;
+            color: #1e293b;
         }
         .guc-dd-week-badge {
             font-size: 11px;
             font-weight: 600;
-            color: #6c757d;
-            background: #e9ecef;
+            color: #64748b;
+            background: #e2e8f0;
             padding: 2px 7px;
             border-radius: 10px;
         }
@@ -387,7 +526,7 @@
             background: linear-gradient(135deg, #198754, #157347);
             color: #ffffff !important;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             font-weight: 700;
             font-size: 13px;
             cursor: pointer;
@@ -396,10 +535,9 @@
         }
         .guc-dd-download-btn:hover {
             background: linear-gradient(135deg, #157347, #0f5132);
-            box-shadow: 0 5px 12px rgba(25, 135, 84, 0.35);
         }
         .guc-dd-download-btn:disabled {
-            background: #6c757d !important;
+            background: #64748b !important;
             cursor: not-allowed !important;
             box-shadow: none !important;
         }
@@ -411,14 +549,14 @@
             right: 24px;
             width: 380px;
             background: #ffffff;
-            color: #212529;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            color: #1e293b;
+            border-radius: 12px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
             padding: 16px 20px;
             z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             font-size: 13px;
-            border: 1px solid #dee2e6;
+            border: 1px solid #e2e8f0;
             border-left: 6px solid #0d6efd;
             transition: all 0.3s ease;
         }
@@ -433,7 +571,7 @@
         .guc-progress-bar-bg {
             width: 100%;
             height: 8px;
-            background: #e9ecef;
+            background: #e2e8f0;
             border-radius: 4px;
             overflow: hidden;
             margin: 10px 0;
@@ -445,7 +583,7 @@
             transition: width 0.2s ease;
         }
         .guc-progress-status {
-            color: #495057;
+            color: #475569;
             font-size: 12px;
             margin-bottom: 8px;
             line-height: 1.4;
@@ -475,19 +613,19 @@
             background: none;
             border: none;
             font-size: 16px;
-            color: #adb5bd;
+            color: #94a3b8;
             line-height: 1;
         }
         .guc-modal-close:hover {
-            color: #495057;
+            color: #1e293b;
         }
     `;
 
     if (typeof GM_addStyle !== 'undefined') {
-        GM_addStyle(STYLES);
+        GM_addStyle(MODERN_STYLES);
     } else {
         const styleEl = document.createElement('style');
-        styleEl.textContent = STYLES;
+        styleEl.textContent = MODERN_STYLES;
         document.head.appendChild(styleEl);
     }
 
@@ -635,6 +773,8 @@
             url: absoluteUrl,
             rawHref: rawHref,
             baseTitle: baseTitle,
+            mainTitle: mainTitle,
+            typeSuffix: typeSuffix.trim(),
             extension: ext,
             isVod: isVod,
             linkHidden: linkHidden
@@ -775,7 +915,7 @@
     }
 
     // =========================================================================
-    // FEATURE 1: ENHANCE & RENAME INDIVIDUAL DOWNLOAD LINKS
+    // FEATURE 1: ENHANCE DOWNLOAD LINKS & BADGES
     // =========================================================================
 
     async function triggerSingleDownload(item, buttonEl) {
@@ -812,7 +952,7 @@
         }
     }
 
-    function enhanceSingleDownloadLinks() {
+    function modernizeCardsAndLinks() {
         const cards = Array.from(document.querySelectorAll(CONFIG.ITEM_CARD_SELECTOR));
         if (!cards.length) return;
 
@@ -820,8 +960,28 @@
         const deduplicatedItems = deduplicateFilenames(parsedItems);
 
         deduplicatedItems.forEach(item => {
+            const card = item.cardElement;
             const link = item.downloadLinkElement;
             if (!link) return;
+
+            // Restyle type text into a modern badge
+            const titleContainer = card.querySelector(CONFIG.TITLE_CONTAINER_SELECTOR);
+            if (titleContainer && !titleContainer.querySelector('.guc-content-type-badge')) {
+                if (item.typeSuffix) {
+                    const cleanType = item.typeSuffix.replace(/[()]/g, '').trim();
+                    const badge = document.createElement('span');
+                    badge.className = 'guc-content-type-badge';
+                    badge.textContent = cleanType;
+
+                    // Remove raw text and append badge
+                    const strong = titleContainer.querySelector('strong');
+                    if (strong) {
+                        titleContainer.innerHTML = '';
+                        titleContainer.appendChild(strong);
+                        titleContainer.appendChild(badge);
+                    }
+                }
+            }
 
             link.setAttribute('download', item.uniqueFilename);
             link.setAttribute('title', `Save as: ${item.uniqueFilename}`);
@@ -860,7 +1020,7 @@
     }
 
     // =========================================================================
-    // FEATURE 2: BATCH ZIP PIPELINE (Single Week & Multi-Week)
+    // FEATURE 2: BATCH ZIP PIPELINE
     // =========================================================================
 
     async function executeZipDownloadPipeline(archiveTitle, fileEntries, statusBtn = null) {
@@ -984,36 +1144,53 @@
     }
 
     // =========================================================================
-    // FEATURE 3: NON-GLITCHING COLLAPSIBLE DROPDOWN SELECTION MENU
+    // FEATURE 3: COLLAPSIBLE WEEKS & TOP MASTER TOOLBAR
     // =========================================================================
 
     const detectedWeeksMap = new Map();
-    let dropdownContainerEl = null;
+    let modernToolbarEl = null;
 
-    function buildDropdownContainerOnce() {
-        if (dropdownContainerEl) return;
+    function buildModernToolbarOnce() {
+        if (modernToolbarEl) return;
 
-        dropdownContainerEl = document.createElement('div');
-        dropdownContainerEl.className = 'guc-dropdown-container';
+        modernToolbarEl = document.createElement('div');
+        modernToolbarEl.className = 'guc-modern-toolbar';
 
-        dropdownContainerEl.innerHTML = `
-            <button type="button" class="guc-dropdown-toggle-btn" id="guc-dd-toggle">
-                <span>📑 Select Weeks to Download</span>
-                <span class="guc-zip-count-badge" id="guc-dd-badge">0 selected (0 files)</span>
-                <span class="guc-dropdown-arrow">▼</span>
-            </button>
-            <div class="guc-dropdown-menu">
-                <div class="guc-dd-header">
-                    <span class="guc-dd-title" id="guc-dd-header-title">Select Weeks</span>
-                    <div class="guc-dd-quick-actions">
-                        <button type="button" class="guc-dd-btn-sm" id="guc-dd-select-all">Select All</button>
-                        <button type="button" class="guc-dd-btn-sm" id="guc-dd-clear">Clear</button>
+        const pageHeading = document.querySelector('h1, h2, #lblCourseName, .coursename');
+        const courseName = pageHeading ? pageHeading.textContent.trim() : document.title.replace(/[-|].*$/, '').trim() || 'Course Materials';
+
+        modernToolbarEl.innerHTML = `
+            <div class="guc-toolbar-top-row">
+                <div class="guc-toolbar-title">
+                    <span>🎓 <strong>${courseName}</strong></span>
+                </div>
+                <div class="guc-toolbar-actions">
+                    <button type="button" class="guc-btn-outline" id="guc-btn-expand-all">📂 Expand All</button>
+                    <button type="button" class="guc-btn-outline" id="guc-btn-collapse-all">📁 Collapse All</button>
+                    <div class="guc-dropdown-container" id="guc-dd-container">
+                        <button type="button" class="guc-dropdown-toggle-btn" id="guc-dd-toggle">
+                            <span>📑 Select Weeks to Download</span>
+                            <span class="guc-zip-count-badge" id="guc-dd-badge">0 selected</span>
+                            <span class="guc-dropdown-arrow">▼</span>
+                        </button>
+                        <div class="guc-dropdown-menu">
+                            <div class="guc-dd-header">
+                                <span class="guc-dd-title" id="guc-dd-header-title">Select Weeks</span>
+                                <div class="guc-dd-quick-actions">
+                                    <button type="button" class="guc-dd-btn-sm" id="guc-dd-select-all">Select All</button>
+                                    <button type="button" class="guc-dd-btn-sm" id="guc-dd-clear">Clear</button>
+                                </div>
+                            </div>
+                            <div class="guc-dd-weeks-list" id="guc-dd-list"></div>
+                            <button type="button" class="guc-dd-download-btn" id="guc-dd-download-btn" disabled>
+                                📦 Download Selected as ZIP
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="guc-dd-weeks-list" id="guc-dd-list"></div>
-                <button type="button" class="guc-dd-download-btn" id="guc-dd-download-btn" disabled>
-                    📦 Download Selected as ZIP
-                </button>
+            </div>
+            <div class="guc-quick-jump-bar" id="guc-quick-jump-bar">
+                <span class="guc-jump-label">Jump to:</span>
             </div>
         `;
 
@@ -1021,27 +1198,40 @@
         const firstHeading = document.querySelector(CONFIG.WEEK_HEADING_SELECTOR) || targetContainer.firstChild;
 
         if (firstHeading && firstHeading.parentNode) {
-            firstHeading.parentNode.insertBefore(dropdownContainerEl, firstHeading);
+            firstHeading.parentNode.insertBefore(modernToolbarEl, firstHeading);
         } else {
-            targetContainer.prepend(dropdownContainerEl);
+            targetContainer.prepend(modernToolbarEl);
         }
 
-        // Toggle dropdown open/close on click
-        const toggleBtn = dropdownContainerEl.querySelector('#guc-dd-toggle');
-        toggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dropdownContainerEl.classList.toggle('open');
+        // Expand / Collapse All Listeners
+        modernToolbarEl.querySelector('#guc-btn-expand-all').addEventListener('click', () => {
+            detectedWeeksMap.forEach(w => {
+                if (w.sectionWrapper) w.sectionWrapper.classList.remove('guc-week-collapsed');
+            });
         });
 
-        // Close dropdown when clicking outside
+        modernToolbarEl.querySelector('#guc-btn-collapse-all').addEventListener('click', () => {
+            detectedWeeksMap.forEach(w => {
+                if (w.sectionWrapper) w.sectionWrapper.classList.add('guc-week-collapsed');
+            });
+        });
+
+        // Dropdown toggle
+        const ddContainer = modernToolbarEl.querySelector('#guc-dd-container');
+        const toggleBtn = modernToolbarEl.querySelector('#guc-dd-toggle');
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            ddContainer.classList.toggle('open');
+        });
+
         document.addEventListener('click', (e) => {
-            if (dropdownContainerEl && !dropdownContainerEl.contains(e.target)) {
-                dropdownContainerEl.classList.remove('open');
+            if (ddContainer && !ddContainer.contains(e.target)) {
+                ddContainer.classList.remove('open');
             }
         });
 
-        // Quick Actions
-        dropdownContainerEl.querySelector('#guc-dd-select-all').addEventListener('click', (e) => {
+        // Dropdown Quick Actions
+        modernToolbarEl.querySelector('#guc-dd-select-all').addEventListener('click', (e) => {
             e.stopPropagation();
             detectedWeeksMap.forEach(w => {
                 w.selected = true;
@@ -1051,7 +1241,7 @@
             updateDropdownCounts();
         });
 
-        dropdownContainerEl.querySelector('#guc-dd-clear').addEventListener('click', (e) => {
+        modernToolbarEl.querySelector('#guc-dd-clear').addEventListener('click', (e) => {
             e.stopPropagation();
             detectedWeeksMap.forEach(w => {
                 w.selected = false;
@@ -1061,32 +1251,48 @@
             updateDropdownCounts();
         });
 
-        // Download Action
-        dropdownContainerEl.querySelector('#guc-dd-download-btn').addEventListener('click', (e) => {
+        modernToolbarEl.querySelector('#guc-dd-download-btn').addEventListener('click', (e) => {
             e.stopPropagation();
-            dropdownContainerEl.classList.remove('open');
+            ddContainer.classList.remove('open');
             downloadSelectedWeeks();
         });
     }
 
     function syncDropdownItems() {
         if (!detectedWeeksMap.size) return;
-        buildDropdownContainerOnce();
+        buildModernToolbarOnce();
 
-        const listEl = dropdownContainerEl.querySelector('#guc-dd-list');
-        const headerTitle = dropdownContainerEl.querySelector('#guc-dd-header-title');
+        const listEl = modernToolbarEl.querySelector('#guc-dd-list');
+        const jumpBarEl = modernToolbarEl.querySelector('#guc-quick-jump-bar');
+        const headerTitle = modernToolbarEl.querySelector('#guc-dd-header-title');
         if (headerTitle) headerTitle.textContent = `Select Weeks (${detectedWeeksMap.size} total)`;
 
         detectedWeeksMap.forEach((week, title) => {
+            // Jump pill
+            if (!week.jumpPill) {
+                const pill = document.createElement('a');
+                pill.className = 'guc-jump-pill';
+                pill.textContent = week.title.replace(/week:\s*/i, 'W: ');
+                pill.title = `Scroll to ${week.title}`;
+                pill.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (week.sectionWrapper) {
+                        week.sectionWrapper.classList.remove('guc-week-collapsed');
+                        week.sectionWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+                week.jumpPill = pill;
+                jumpBarEl.appendChild(pill);
+            }
+
+            // Dropdown list row
             if (week.dropdownRow && week.dropdownRow.parentNode) {
-                // Row already exists, just sync state
                 if (week.dropdownCheckbox) {
                     week.dropdownCheckbox.checked = !!week.selected;
                 }
                 return;
             }
 
-            // Create row once
             const itemRow = document.createElement('div');
             itemRow.className = 'guc-dd-week-item';
 
@@ -1125,13 +1331,13 @@
     }
 
     function updateDropdownCounts() {
-        if (!dropdownContainerEl) return;
+        if (!modernToolbarEl) return;
         const allWeeks = Array.from(detectedWeeksMap.values());
         const selected = allWeeks.filter(w => w.selected);
         const totalFiles = selected.reduce((sum, w) => sum + w.items.length, 0);
 
-        const badge = dropdownContainerEl.querySelector('#guc-dd-badge');
-        const dlBtn = dropdownContainerEl.querySelector('#guc-dd-download-btn');
+        const badge = modernToolbarEl.querySelector('#guc-dd-badge');
+        const dlBtn = modernToolbarEl.querySelector('#guc-dd-download-btn');
 
         if (badge) badge.textContent = `${selected.length} selected (${totalFiles} files)`;
         if (dlBtn) {
@@ -1143,7 +1349,7 @@
     function downloadSelectedWeeks() {
         const selected = Array.from(detectedWeeksMap.values()).filter(w => w.selected);
         if (selected.length === 0) {
-            alert('Please select at least one week from the dropdown menu.');
+            alert('Please select at least one week.');
             return;
         }
 
@@ -1168,126 +1374,157 @@
             ? `${courseName} - Selected (${selected.length} Weeks)`
             : selected[0].title;
 
-        const downloadBtn = dropdownContainerEl ? dropdownContainerEl.querySelector('#guc-dd-download-btn') : null;
+        const downloadBtn = modernToolbarEl ? modernToolbarEl.querySelector('#guc-dd-download-btn') : null;
         executeZipDownloadPipeline(archiveName, allFileEntries, downloadBtn);
     }
 
     // =========================================================================
-    // INJECT UI BUTTONS & CHECKBOXES
+    // FEATURE 4: COLLAPSIBLE WEEK STRUCTURE & INJECTIONS
     // =========================================================================
 
-    function injectZipButtons() {
+    function modernizeWeekSections() {
         const headings = Array.from(document.querySelectorAll(CONFIG.WEEK_HEADING_SELECTOR)).filter(h => {
             const text = (h.textContent || '').trim();
             return /^week[:\s]/i.test(text) && !h.closest('.card.mb-4');
         });
 
-        headings.forEach((heading, idx) => {
-            if (heading.getAttribute('data-guc-zip-bound')) return;
+        headings.forEach((heading) => {
+            if (heading.getAttribute('data-guc-modernized')) return;
+            heading.setAttribute('data-guc-modernized', 'true');
 
-            const rawTitle = heading.textContent.replace(/Download.*Zip/gi, '').trim() || `Week ${idx + 1}`;
-            const weekContainer = heading.closest('.card:not(.mb-4), .panel, .tab-pane') || heading.closest('.row')?.parentElement || document.body;
+            const rawTitle = heading.textContent.replace(/Download.*Zip/gi, '').trim();
 
-            let collectedCards = [];
+            // Locate elements belonging to this week
+            const headingRow = heading.closest('.row') || heading;
+            let collectedElements = [];
+            let next = headingRow.nextElementSibling;
 
-            if (weekContainer !== document.body) {
-                const containerHeadings = weekContainer.querySelectorAll('h2.text-big, h1.text-big');
-                if (containerHeadings.length <= 1) {
-                    collectedCards = Array.from(weekContainer.querySelectorAll(CONFIG.ITEM_CARD_SELECTOR));
+            while (next) {
+                if (next.querySelector('h2.text-big') || (next.matches('h2') && /^week[:\s]/i.test(next.textContent))) {
+                    break;
                 }
+                collectedElements.push(next);
+                next = next.nextElementSibling;
             }
 
-            if (collectedCards.length === 0) {
-                let current = heading.closest('.row') || heading;
-                let next = current.nextElementSibling;
-                while (next) {
-                    if (next.querySelector('h2.text-big') || (next.matches('h2') && /^week[:\s]/i.test(next.textContent))) {
-                        break;
-                    }
-                    if (next.matches(CONFIG.ITEM_CARD_SELECTOR)) {
-                        collectedCards.push(next);
-                    } else {
-                        const nested = next.querySelectorAll(CONFIG.ITEM_CARD_SELECTOR);
-                        nested.forEach(c => collectedCards.push(c));
-                    }
-                    next = next.nextElementSibling;
-                }
-            }
-
-            if (collectedCards.length > 0) {
-                heading.setAttribute('data-guc-zip-bound', 'true');
-                heading.classList.add('guc-week-heading-wrapper');
-
-                const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
-                const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
-
-                // Get or create unique week entry in Map
-                let weekEntry = detectedWeeksMap.get(rawTitle);
-                if (!weekEntry) {
-                    weekEntry = {
-                        title: rawTitle,
-                        items: filteredItems,
-                        selected: false,
-                        onPageCheckbox: null,
-                        dropdownCheckbox: null,
-                        dropdownRow: null
-                    };
-                    detectedWeeksMap.set(rawTitle, weekEntry);
+            // Cards in this week
+            const collectedCards = [];
+            collectedElements.forEach(el => {
+                if (el.matches(CONFIG.ITEM_CARD_SELECTOR)) {
+                    collectedCards.push(el);
                 } else {
-                    weekEntry.items = filteredItems;
+                    el.querySelectorAll(CONFIG.ITEM_CARD_SELECTOR).forEach(c => collectedCards.push(c));
                 }
+            });
 
-                // 1. Checkbox directly beside heading
-                const selectLabel = document.createElement('label');
-                selectLabel.className = 'guc-week-select-label';
-                selectLabel.title = `Select ${rawTitle} for multi-week batch download`;
+            if (collectedCards.length === 0) return;
 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'guc-week-checkbox';
-                checkbox.checked = !!weekEntry.selected;
+            const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
+            const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
 
-                checkbox.addEventListener('change', () => {
-                    weekEntry.selected = checkbox.checked;
-                    if (weekEntry.dropdownCheckbox) weekEntry.dropdownCheckbox.checked = checkbox.checked;
-                    updateDropdownCounts();
-                });
+            // Wrap entire week inside modern section card
+            const sectionWrapper = document.createElement('div');
+            sectionWrapper.className = 'guc-week-section-wrapper';
 
-                weekEntry.onPageCheckbox = checkbox;
-                selectLabel.appendChild(checkbox);
-                selectLabel.appendChild(document.createTextNode('Select'));
-                heading.appendChild(selectLabel);
+            const modernHeader = document.createElement('div');
+            modernHeader.className = 'guc-modern-week-header';
 
-                // 2. Single week ZIP button
-                const zipBtn = document.createElement('button');
-                zipBtn.type = 'button';
-                zipBtn.className = 'guc-zip-btn';
-                zipBtn.innerHTML = `📦 Download Week ZIP <span class="guc-zip-count-badge">${filteredItems.length}</span>`;
-                zipBtn.title = `Download all ${filteredItems.length} files for ${rawTitle} as a ZIP`;
+            modernHeader.innerHTML = `
+                <div class="guc-week-header-left">
+                    <span class="guc-week-collapse-chevron">▼</span>
+                    <h3 class="guc-week-title-text">${rawTitle}</h3>
+                </div>
+                <div class="guc-week-header-actions" onclick="event.stopPropagation()"></div>
+            `;
 
-                zipBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const deduplicated = deduplicateFilenames(filteredItems);
-                    const entries = deduplicated.map(i => ({ name: i.uniqueFilename, url: i.url }));
-                    executeZipDownloadPipeline(rawTitle, entries, zipBtn);
-                });
+            // Collapsible Body
+            const bodyContainer = document.createElement('div');
+            bodyContainer.className = 'guc-week-body-container';
 
-                heading.appendChild(zipBtn);
+            // Insert wrapper into DOM
+            headingRow.parentNode.insertBefore(sectionWrapper, headingRow);
+            sectionWrapper.appendChild(modernHeader);
+            sectionWrapper.appendChild(bodyContainer);
+
+            // Move contents into body container
+            collectedElements.forEach(el => bodyContainer.appendChild(el));
+            headingRow.style.display = 'none'; // Hide old raw heading
+
+            // Click header to toggle collapse
+            modernHeader.addEventListener('click', () => {
+                sectionWrapper.classList.toggle('guc-week-collapsed');
+            });
+
+            // Action buttons inside header
+            const actionsContainer = modernHeader.querySelector('.guc-week-header-actions');
+
+            let weekEntry = detectedWeeksMap.get(rawTitle);
+            if (!weekEntry) {
+                weekEntry = {
+                    title: rawTitle,
+                    items: filteredItems,
+                    selected: false,
+                    onPageCheckbox: null,
+                    dropdownCheckbox: null,
+                    dropdownRow: null,
+                    sectionWrapper: sectionWrapper,
+                    jumpPill: null
+                };
+                detectedWeeksMap.set(rawTitle, weekEntry);
+            } else {
+                weekEntry.items = filteredItems;
+                weekEntry.sectionWrapper = sectionWrapper;
             }
+
+            // 1. Checkbox
+            const selectLabel = document.createElement('label');
+            selectLabel.className = 'guc-week-select-label';
+            selectLabel.title = `Select ${rawTitle} for batch download`;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'guc-week-checkbox';
+            checkbox.checked = !!weekEntry.selected;
+
+            checkbox.addEventListener('change', () => {
+                weekEntry.selected = checkbox.checked;
+                if (weekEntry.dropdownCheckbox) weekEntry.dropdownCheckbox.checked = checkbox.checked;
+                updateDropdownCounts();
+            });
+
+            weekEntry.onPageCheckbox = checkbox;
+            selectLabel.appendChild(checkbox);
+            selectLabel.appendChild(document.createTextNode('Select'));
+            actionsContainer.appendChild(selectLabel);
+
+            // 2. Week ZIP Button
+            const zipBtn = document.createElement('button');
+            zipBtn.type = 'button';
+            zipBtn.className = 'guc-zip-btn';
+            zipBtn.innerHTML = `📦 Download Week ZIP <span class="guc-zip-count-badge">${filteredItems.length}</span>`;
+            zipBtn.title = `Download all ${filteredItems.length} files for ${rawTitle} as a ZIP`;
+
+            zipBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const deduplicated = deduplicateFilenames(filteredItems);
+                const entries = deduplicated.map(i => ({ name: i.uniqueFilename, url: i.url }));
+                executeZipDownloadPipeline(rawTitle, entries, zipBtn);
+            });
+
+            actionsContainer.appendChild(zipBtn);
         });
 
-        // Synchronize dropdown without re-rendering or glitching
         syncDropdownItems();
     }
 
     // =========================================================================
-    // INITIALIZATION & SAFE MUTATION OBSERVER
+    // INITIALIZATION & MUTATION OBSERVER
     // =========================================================================
 
     function runAll() {
-        enhanceSingleDownloadLinks();
-        injectZipButtons();
+        modernizeCardsAndLinks();
+        modernizeWeekSections();
     }
 
     if (document.readyState === 'loading') {
@@ -1296,24 +1533,22 @@
         runAll();
     }
 
-    // Safe Mutation Observer that ignores our own UI mutations
     let debounceTimer = null;
     const observer = new MutationObserver((mutations) => {
         let shouldUpdate = false;
         for (const mut of mutations) {
-            // Ignore mutations created by our own userscript elements
             if (mut.target && (
-                mut.target.closest?.('.guc-dropdown-container') ||
+                mut.target.closest?.('.guc-modern-toolbar') ||
                 mut.target.closest?.('.guc-progress-modal') ||
-                mut.target.classList?.contains('guc-zip-btn') ||
-                mut.target.classList?.contains('guc-week-select-label')
+                mut.target.closest?.('.guc-modern-week-header') ||
+                mut.target.classList?.contains('guc-week-section-wrapper')
             )) {
                 continue;
             }
 
             if (mut.addedNodes.length > 0) {
                 for (const node of mut.addedNodes) {
-                    if (node.nodeType === 1 && !node.classList?.contains('guc-dropdown-container') && !node.classList?.contains('guc-progress-modal')) {
+                    if (node.nodeType === 1 && !node.classList?.contains('guc-modern-toolbar') && !node.classList?.contains('guc-week-section-wrapper')) {
                         shouldUpdate = true;
                         break;
                     }
@@ -1332,5 +1567,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.8.0 initialized.');
+    console.log('[GUC CMS] Modern UI & Batch Downloader v2.0.0 initialized.');
 })();
