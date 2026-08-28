@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GUC CMS Content Renamer & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.5.0
-// @description  Renames GUC CMS file downloads to match content titles and adds 1-click batch ZIP downloads per week beside the week heading.
+// @version      1.6.0
+// @description  Renames GUC CMS file downloads to match content titles, adds 1-click single-week ZIP downloads, and multi-week selection batch ZIP downloader.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -52,7 +52,7 @@
     };
 
     // =========================================================================
-    // BUILT-IN PURE JS SYNCHRONOUS ZIP GENERATOR (Zero Hangs, Zero Dependencies)
+    // BUILT-IN PURE JS SYNCHRONOUS ZIP GENERATOR (Zero Hangs, Subfolder Support)
     // =========================================================================
 
     const CRC_TABLE = new Uint32Array(256);
@@ -74,7 +74,7 @@
 
     /**
      * Builds a standard uncompressed ZIP file Uint8Array in memory.
-     * Takes an array of objects: [{ name: "FileName.pdf", data: ArrayBuffer | Uint8Array }, ...]
+     * Takes an array of objects: [{ name: "Week 1/Lecture.pdf", data: ArrayBuffer | Uint8Array }, ...]
      */
     function buildZipSynchronous(files) {
         const encoder = new TextEncoder();
@@ -172,14 +172,43 @@
             display: inline-flex !important;
             align-items: center !important;
             flex-wrap: wrap !important;
-            gap: 12px !important;
+            gap: 10px !important;
         }
 
+        /* Checkbox label beside Week heading */
+        .guc-week-select-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+            background: #f8f9fa;
+            border: 1px solid #ced4da;
+            padding: 4px 10px;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+        .guc-week-select-label:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+        .guc-week-checkbox {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            accent-color: #0d6efd;
+        }
+
+        /* Single Week Batch Zip Button */
         .guc-zip-btn {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            margin-left: 12px;
             padding: 5px 12px;
             font-size: 13px;
             font-weight: 600;
@@ -242,6 +271,66 @@
             background-color: #157347;
         }
 
+        /* Floating Multi-Week Action Bar at Bottom */
+        .guc-multi-action-bar {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(120%);
+            background: #212529;
+            color: #ffffff;
+            padding: 12px 24px;
+            border-radius: 50px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 99999;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            font-size: 14px;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .guc-multi-action-bar.visible {
+            transform: translateX(-50%) translateY(0);
+        }
+        .guc-multi-count-text {
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .guc-multi-btn-download {
+            background: linear-gradient(135deg, #198754, #157347);
+            color: #ffffff !important;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(25, 135, 84, 0.3);
+            transition: all 0.2s ease;
+        }
+        .guc-multi-btn-download:hover {
+            background: linear-gradient(135deg, #157347, #0f5132);
+            transform: scale(1.04);
+        }
+        .guc-multi-btn-action {
+            background: rgba(255, 255, 255, 0.15);
+            color: #f8f9fa !important;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .guc-multi-btn-action:hover {
+            background: rgba(255, 255, 255, 0.28);
+        }
+
+        /* Floating Progress Modal */
         .guc-progress-modal {
             position: fixed;
             bottom: 24px;
@@ -536,7 +625,7 @@
                                 reject(new Error(`HTTP ${res.status}: ${res.statusText || 'Server Error'}`));
                             }
                         },
-                        onerror: (err) => {
+                        onerror: () => {
                             if (finished) return;
                             tryFetchFallback(url, resolve, reject, timer);
                         },
@@ -699,59 +788,65 @@
     }
 
     // =========================================================================
-    // FEATURE 2: BATCH DOWNLOAD WEEK / SECTION AS ZIP
+    // FEATURE 2: BATCH ZIP PIPELINE (Single Week & Multi-Week)
     // =========================================================================
 
-    async function executeBatchZip(sectionTitle, items, statusBtn) {
-        if (!items || items.length === 0) {
-            alert('No downloadable files found in this section.');
+    /**
+     * Executes the download and ZIP generation for a collection of files.
+     * fileEntries: [{ name: "Week Name/Lecture.pdf", url: "https://..." }]
+     */
+    async function executeZipDownloadPipeline(archiveTitle, fileEntries, statusBtn = null) {
+        if (!fileEntries || fileEntries.length === 0) {
+            alert('No downloadable files found in selection.');
             return;
         }
 
-        const originalBtnHtml = statusBtn.innerHTML;
-        statusBtn.classList.add('busy');
-        statusBtn.disabled = true;
+        const originalBtnHtml = statusBtn ? statusBtn.innerHTML : '';
+        if (statusBtn) {
+            statusBtn.classList.add('busy');
+            statusBtn.disabled = true;
+        }
 
-        showProgressModal(sectionTitle);
-        updateProgressModal(5, `Found ${items.length} files. Starting download...`);
+        showProgressModal(archiveTitle);
+        updateProgressModal(5, `Starting batch download of ${fileEntries.length} files...`);
 
-        const deduplicated = deduplicateFilenames(items);
-        const total = deduplicated.length;
-        const downloadedBuffers = [];
+        const total = fileEntries.length;
+        const downloadedFiles = [];
         let completed = 0;
         let failedCount = 0;
 
-        console.log(`[GUC CMS] Starting batch ZIP for "${sectionTitle}" (${total} files)...`);
+        console.log(`[GUC CMS] Starting batch ZIP pipeline for "${archiveTitle}" (${total} files)...`);
 
         let currentIndex = 0;
         async function worker() {
-            while (currentIndex < deduplicated.length) {
+            while (currentIndex < fileEntries.length) {
                 const itemIndex = currentIndex++;
-                const item = deduplicated[itemIndex];
+                const fileItem = fileEntries[itemIndex];
 
                 const currentPercent = 10 + Math.round((completed / total) * 80);
-                statusBtn.innerHTML = `⏳ (${completed + 1}/${total}) ${item.uniqueFilename.substring(0, 14)}...`;
+                if (statusBtn) {
+                    statusBtn.innerHTML = `⏳ (${completed + 1}/${total})...`;
+                }
                 updateProgressModal(
                     currentPercent,
-                    `[${completed + 1}/${total}] Fetching <strong>${item.uniqueFilename}</strong>`
+                    `[${completed + 1}/${total}] Fetching <strong>${fileItem.name}</strong>`
                 );
 
                 try {
-                    console.log(`[GUC CMS] Fetching: ${item.uniqueFilename} (${item.url})`);
-                    const arrayBuffer = await fetchFileArrayBuffer(item.url);
+                    const arrayBuffer = await fetchFileArrayBuffer(fileItem.url);
 
                     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-                        throw new Error('Received empty file buffer (0 bytes)');
+                        throw new Error('Received empty file buffer');
                     }
 
-                    downloadedBuffers.push({
-                        name: item.uniqueFilename,
+                    downloadedFiles.push({
+                        name: fileItem.name,
                         data: arrayBuffer
                     });
                     completed++;
-                    console.log(`[GUC CMS] Successfully loaded (${completed}/${total}): ${item.uniqueFilename}`);
+                    console.log(`[GUC CMS] Successfully loaded (${completed}/${total}): ${fileItem.name}`);
                 } catch (err) {
-                    console.error(`[GUC CMS] Failed to fetch "${item.uniqueFilename}":`, err);
+                    console.error(`[GUC CMS] Failed to fetch "${fileItem.name}":`, err);
                     failedCount++;
                 }
             }
@@ -766,61 +861,159 @@
         await Promise.all(workers);
 
         if (completed === 0) {
-            updateProgressModal(100, `❌ Failed to download any files for "${sectionTitle}".`);
-            statusBtn.innerHTML = '❌ Download Failed';
-            setTimeout(() => {
-                statusBtn.innerHTML = originalBtnHtml;
-                statusBtn.classList.remove('busy');
-                statusBtn.disabled = false;
-            }, 3500);
+            updateProgressModal(100, `❌ Failed to download any files for "${archiveTitle}".`);
+            if (statusBtn) {
+                statusBtn.innerHTML = '❌ Download Failed';
+                setTimeout(() => {
+                    statusBtn.innerHTML = originalBtnHtml;
+                    statusBtn.classList.remove('busy');
+                    statusBtn.disabled = false;
+                }, 3500);
+            }
             return;
         }
 
-        // Synchronously build the ZIP in memory (instant, 0ms lag, no stream hanging!)
-        statusBtn.innerHTML = `📦 Zipping (${completed} files)...`;
+        // Build ZIP synchronously
+        if (statusBtn) statusBtn.innerHTML = `📦 Zipping (${completed} files)...`;
         updateProgressModal(95, `Building ZIP archive (${completed} files)...`);
-        console.log(`[GUC CMS] Building synchronous ZIP for ${completed} items...`);
 
         try {
-            const zipBytes = buildZipSynchronous(downloadedBuffers);
+            const zipBytes = buildZipSynchronous(downloadedFiles);
             const zipBlob = new Blob([zipBytes], { type: 'application/zip' });
-            const cleanZipName = `${sanitizeFilename(sectionTitle)} - GUC CMS.zip`;
+            const cleanZipName = `${sanitizeFilename(archiveTitle)} - GUC CMS.zip`;
             const blobSizeMb = (zipBlob.size / (1024 * 1024)).toFixed(2);
 
-            console.log(`[GUC CMS] ZIP built instantly! Size: ${blobSizeMb} MB (${zipBlob.size} bytes)`);
+            console.log(`[GUC CMS] ZIP built successfully! Size: ${blobSizeMb} MB`);
 
-            // Trigger download
             const blobUrl = triggerDownloadBlob(zipBlob, cleanZipName);
 
-            // Update UI with ready state & direct clickable button in case auto-download was blocked
             updateProgressModal(
                 100,
                 `✅ ZIP ready (${blobSizeMb} MB). Download started!`,
                 `<a href="${blobUrl}" download="${cleanZipName}" class="guc-dl-link-btn">💾 Click here if download didn't start</a>`
             );
 
-            statusBtn.innerHTML = `✅ Complete! (${blobSizeMb} MB)`;
-            statusBtn.classList.remove('busy');
-            statusBtn.classList.add('ready');
+            if (statusBtn) {
+                statusBtn.innerHTML = `✅ Complete! (${blobSizeMb} MB)`;
+                statusBtn.classList.remove('busy');
+                statusBtn.classList.add('ready');
+            }
 
             closeProgressModal(8000);
         } catch (zipErr) {
             console.error('[GUC CMS] Error building ZIP:', zipErr);
-            updateProgressModal(100, `❌ ZIP building error: ${zipErr.message}`);
-            statusBtn.innerHTML = '❌ ZIP Error';
+            updateProgressModal(100, `❌ ZIP error: ${zipErr.message}`);
+            if (statusBtn) statusBtn.innerHTML = '❌ ZIP Error';
         } finally {
-            setTimeout(() => {
-                statusBtn.innerHTML = originalBtnHtml;
-                statusBtn.classList.remove('busy');
-                statusBtn.classList.remove('ready');
-                statusBtn.disabled = false;
-            }, 6000);
+            if (statusBtn) {
+                setTimeout(() => {
+                    statusBtn.innerHTML = originalBtnHtml;
+                    statusBtn.classList.remove('busy');
+                    statusBtn.classList.remove('ready');
+                    statusBtn.disabled = false;
+                }, 6000);
+            }
         }
     }
 
-    /**
-     * Injects ZIP download button beside each Week heading.
-     */
+    // =========================================================================
+    // FEATURE 3: MULTI-WEEK SELECTION ENGINE & FLOATING BAR
+    // =========================================================================
+
+    const detectedWeeks = [];
+    let multiActionBarEl = null;
+
+    function getMultiActionBar() {
+        if (!multiActionBarEl) {
+            multiActionBarEl = document.createElement('div');
+            multiActionBarEl.className = 'guc-multi-action-bar';
+            multiActionBarEl.innerHTML = `
+                <div class="guc-multi-count-text">
+                    <span>📦 <strong id="guc-selected-weeks-count">0</strong> Weeks Selected (<strong id="guc-selected-files-count">0</strong> Files)</span>
+                </div>
+                <button type="button" class="guc-multi-btn-action" id="guc-multi-select-all">Select All</button>
+                <button type="button" class="guc-multi-btn-action" id="guc-multi-clear">Clear</button>
+                <button type="button" class="guc-multi-btn-download" id="guc-multi-download-btn">📦 Download Selected as ZIP</button>
+            `;
+            document.body.appendChild(multiActionBarEl);
+
+            multiActionBarEl.querySelector('#guc-multi-select-all').onclick = () => {
+                detectedWeeks.forEach(w => {
+                    if (w.checkbox) w.checkbox.checked = true;
+                });
+                updateMultiActionBar();
+            };
+
+            multiActionBarEl.querySelector('#guc-multi-clear').onclick = () => {
+                detectedWeeks.forEach(w => {
+                    if (w.checkbox) w.checkbox.checked = false;
+                });
+                updateMultiActionBar();
+            };
+
+            multiActionBarEl.querySelector('#guc-multi-download-btn').onclick = () => {
+                downloadSelectedWeeks();
+            };
+        }
+        return multiActionBarEl;
+    }
+
+    function updateMultiActionBar() {
+        const bar = getMultiActionBar();
+        const selected = detectedWeeks.filter(w => w.checkbox && w.checkbox.checked);
+
+        const totalFiles = selected.reduce((sum, w) => sum + w.items.length, 0);
+
+        const weeksCountEl = bar.querySelector('#guc-selected-weeks-count');
+        const filesCountEl = bar.querySelector('#guc-selected-files-count');
+
+        if (weeksCountEl) weeksCountEl.textContent = selected.length;
+        if (filesCountEl) filesCountEl.textContent = totalFiles;
+
+        if (selected.length > 0) {
+            bar.classList.add('visible');
+        } else {
+            bar.classList.remove('visible');
+        }
+    }
+
+    function downloadSelectedWeeks() {
+        const selected = detectedWeeks.filter(w => w.checkbox && w.checkbox.checked);
+        if (selected.length === 0) {
+            alert('Please select at least one week using the checkboxes.');
+            return;
+        }
+
+        const isMultiWeek = selected.length > 1;
+        const allFileEntries = [];
+
+        selected.forEach(week => {
+            const cleanWeekFolder = sanitizeFilename(week.title);
+            const deduplicated = deduplicateFilenames(week.items);
+
+            deduplicated.forEach(item => {
+                allFileEntries.push({
+                    // If multiple weeks selected, place files into subfolders per week
+                    name: isMultiWeek ? `${cleanWeekFolder}/${item.uniqueFilename}` : item.uniqueFilename,
+                    url: item.url
+                });
+            });
+        });
+
+        const pageHeading = document.querySelector('h1, h2, #lblCourseName, .coursename');
+        const courseName = pageHeading ? pageHeading.textContent.trim() : 'GUC CMS';
+        const archiveName = isMultiWeek
+            ? `${courseName} - Selected (${selected.length} Weeks)`
+            : selected[0].title;
+
+        const downloadBtn = document.querySelector('#guc-multi-download-btn');
+        executeZipDownloadPipeline(archiveName, allFileEntries, downloadBtn);
+    }
+
+    // =========================================================================
+    // INJECT UI BUTTONS & CHECKBOXES
+    // =========================================================================
+
     function injectZipButtons() {
         const headings = Array.from(document.querySelectorAll(CONFIG.WEEK_HEADING_SELECTOR)).filter(h => {
             const text = (h.textContent || '').trim();
@@ -828,7 +1021,7 @@
         });
 
         headings.forEach((heading, idx) => {
-            if (heading.querySelector('.guc-zip-btn') || heading.getAttribute('data-guc-zip-bound')) return;
+            if (heading.getAttribute('data-guc-zip-bound')) return;
 
             const rawTitle = heading.textContent.replace(/Download.*Zip/gi, '').trim() || `Week ${idx + 1}`;
             const weekContainer = heading.closest('.card:not(.mb-4), .panel, .tab-pane') || heading.closest('.row')?.parentElement || document.body;
@@ -866,26 +1059,48 @@
                 const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
                 const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
 
-                const zipBtn = createZipButton(rawTitle, filteredItems);
+                // 1. Checkbox for multi-week selection
+                const selectLabel = document.createElement('label');
+                selectLabel.className = 'guc-week-select-label';
+                selectLabel.title = `Select ${rawTitle} for multi-week batch download`;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'guc-week-checkbox';
+                checkbox.addEventListener('change', () => {
+                    updateMultiActionBar();
+                });
+
+                selectLabel.appendChild(checkbox);
+                selectLabel.appendChild(document.createTextNode('Select'));
+                heading.appendChild(selectLabel);
+
+                // 2. Single week ZIP button
+                const zipBtn = document.createElement('button');
+                zipBtn.type = 'button';
+                zipBtn.className = 'guc-zip-btn';
+                zipBtn.innerHTML = `📦 Download Week ZIP <span class="guc-zip-count-badge">${filteredItems.length}</span>`;
+                zipBtn.title = `Download all ${filteredItems.length} files for ${rawTitle} as a ZIP`;
+
+                zipBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const deduplicated = deduplicateFilenames(filteredItems);
+                    const entries = deduplicated.map(i => ({ name: i.uniqueFilename, url: i.url }));
+                    executeZipDownloadPipeline(rawTitle, entries, zipBtn);
+                });
+
                 heading.appendChild(zipBtn);
+
+                // Store in detected weeks list
+                detectedWeeks.push({
+                    title: rawTitle,
+                    items: filteredItems,
+                    checkbox: checkbox,
+                    heading: heading
+                });
             }
         });
-    }
-
-    function createZipButton(title, items) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'guc-zip-btn';
-        btn.innerHTML = `📦 Download Week as ZIP <span class="guc-zip-count-badge">${items.length}</span>`;
-        btn.title = `Download all ${items.length} files in this section as a ZIP archive`;
-
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            executeBatchZip(title, items, btn);
-        });
-
-        return btn;
     }
 
     // =========================================================================
@@ -923,5 +1138,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.5.0 initialized.');
+    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.6.0 initialized.');
 })();

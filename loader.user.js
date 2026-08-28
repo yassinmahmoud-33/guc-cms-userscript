@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GUC CMS Local Dev Loader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.5.0
+// @version      1.6.0
 // @description  Automatically loads and runs the local guc_cms.user.js from disk on every page reload.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
