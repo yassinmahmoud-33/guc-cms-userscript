@@ -1,14 +1,13 @@
 // ==UserScript==
 // @name         GUC CMS Content Renamer & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      1.3.0
+// @version      1.4.0
 // @description  Renames GUC CMS file downloads to match content titles and adds 1-click batch ZIP downloads per week beside the week heading.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @icon         https://cms.guc.edu.eg/favicon.ico
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js
-// @require      https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_download
 // @grant        GM_addStyle
@@ -47,10 +46,10 @@
         INCLUDE_VOD_IN_ZIP: true,
 
         // Concurrent download limit for batch fetching
-        CONCURRENCY_LIMIT: 3,
+        CONCURRENCY_LIMIT: 2,
 
-        // Request timeout in milliseconds (25 seconds)
-        REQUEST_TIMEOUT_MS: 25000
+        // Request timeout in milliseconds (30 seconds)
+        REQUEST_TIMEOUT_MS: 30000
     };
 
     // =========================================================================
@@ -101,6 +100,17 @@
             transform: none !important;
             box-shadow: none !important;
         }
+        .guc-zip-btn.ready {
+            background: linear-gradient(135deg, #198754, #157347) !important;
+            border-color: #146c43 !important;
+            cursor: pointer !important;
+            animation: pulse-green 1.5s infinite;
+        }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(25, 135, 84, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+        }
 
         /* Badge inside Zip Button */
         .guc-zip-count-badge {
@@ -130,44 +140,81 @@
             background-color: #157347;
         }
 
-        /* Global Floating Progress Toast */
-        .guc-toast {
+        /* Floating Progress Modal */
+        .guc-progress-modal {
             position: fixed;
             bottom: 24px;
             right: 24px;
-            max-width: 380px;
+            width: 380px;
             background: #ffffff;
             color: #212529;
-            border-radius: 8px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-            padding: 14px 18px;
-            z-index: 99999;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            padding: 16px 20px;
+            z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             font-size: 13px;
-            border-left: 5px solid #0d6efd;
+            border: 1px solid #dee2e6;
+            border-left: 6px solid #0d6efd;
             transition: all 0.3s ease;
         }
-        .guc-toast-title {
+        .guc-progress-header {
             font-weight: 700;
             font-size: 14px;
-            margin-bottom: 6px;
+            margin-bottom: 8px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
-        .guc-toast-body {
-            color: #495057;
-            word-break: break-word;
-            line-height: 1.4;
+        .guc-progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
         }
-        .guc-toast-close {
+        .guc-progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: #0d6efd;
+            transition: width 0.2s ease;
+        }
+        .guc-progress-status {
+            color: #495057;
+            font-size: 12px;
+            margin-bottom: 8px;
+            line-height: 1.4;
+            max-height: 48px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .guc-dl-link-btn {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+            background: #198754;
+            color: #ffffff !important;
+            text-align: center;
+            font-weight: 600;
+            border-radius: 6px;
+            text-decoration: none !important;
+            cursor: pointer;
+            box-sizing: border-box;
+        }
+        .guc-dl-link-btn:hover {
+            background: #157347;
+        }
+        .guc-modal-close {
             cursor: pointer;
             background: none;
             border: none;
             font-size: 16px;
             color: #adb5bd;
+            line-height: 1;
         }
-        .guc-toast-close:hover {
+        .guc-modal-close:hover {
             color: #495057;
         }
     `;
@@ -181,42 +228,56 @@
     }
 
     // =========================================================================
-    // TOAST NOTIFICATIONS
+    // PROGRESS MODAL UI
     // =========================================================================
 
-    let activeToast = null;
+    let progressModalEl = null;
 
-    function showToast(title, message, isError = false, autoCloseMs = 0) {
-        if (!activeToast) {
-            activeToast = document.createElement('div');
-            activeToast.className = 'guc-toast';
-            document.body.appendChild(activeToast);
+    function showProgressModal(title) {
+        if (!progressModalEl) {
+            progressModalEl = document.createElement('div');
+            progressModalEl.className = 'guc-progress-modal';
+            document.body.appendChild(progressModalEl);
         }
 
-        activeToast.style.borderLeftColor = isError ? '#dc3545' : '#0d6efd';
-        activeToast.innerHTML = `
-            <div class="guc-toast-title">
-                <span>${isError ? '⚠️' : '📦'} ${title}</span>
-                <button class="guc-toast-close" title="Close">✕</button>
+        progressModalEl.innerHTML = `
+            <div class="guc-progress-header">
+                <span>📦 ${title}</span>
+                <button class="guc-modal-close" title="Close">✕</button>
             </div>
-            <div class="guc-toast-body">${message}</div>
+            <div class="guc-progress-bar-bg">
+                <div class="guc-progress-bar-fill" id="guc-pbar"></div>
+            </div>
+            <div class="guc-progress-status" id="guc-pstatus">Initializing download...</div>
+            <div id="guc-paction"></div>
         `;
 
-        activeToast.querySelector('.guc-toast-close').onclick = () => {
-            if (activeToast && activeToast.parentNode) {
-                activeToast.parentNode.removeChild(activeToast);
-                activeToast = null;
+        progressModalEl.querySelector('.guc-modal-close').onclick = () => {
+            if (progressModalEl && progressModalEl.parentNode) {
+                progressModalEl.parentNode.removeChild(progressModalEl);
+                progressModalEl = null;
             }
         };
+    }
 
-        if (autoCloseMs > 0) {
-            setTimeout(() => {
-                if (activeToast && activeToast.parentNode) {
-                    activeToast.parentNode.removeChild(activeToast);
-                    activeToast = null;
-                }
-            }, autoCloseMs);
-        }
+    function updateProgressModal(percent, statusHtml, actionHtml = null) {
+        if (!progressModalEl) return;
+        const pbar = progressModalEl.querySelector('#guc-pbar');
+        const pstatus = progressModalEl.querySelector('#guc-pstatus');
+        const paction = progressModalEl.querySelector('#guc-paction');
+
+        if (pbar) pbar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+        if (pstatus) pstatus.innerHTML = statusHtml;
+        if (actionHtml !== null && paction) paction.innerHTML = actionHtml;
+    }
+
+    function closeProgressModal(delayMs = 4000) {
+        setTimeout(() => {
+            if (progressModalEl && progressModalEl.parentNode) {
+                progressModalEl.parentNode.removeChild(progressModalEl);
+                progressModalEl = null;
+            }
+        }, delayMs);
     }
 
     // =========================================================================
@@ -340,74 +401,121 @@
     }
 
     // =========================================================================
-    // DIRECT BINARY FETCH (Fast same-origin fetch + fallback)
+    // RELIABLE BINARY FETCHING
     // =========================================================================
 
     /**
-     * Downloads file as raw ArrayBuffer.
-     * Uses native browser fetch with cookies (same origin) first, falls back to GM_xmlhttpRequest.
+     * Downloads file as ArrayBuffer using GM_xmlhttpRequest first, with window.fetch fallback.
      */
-    async function fetchFileArrayBuffer(url) {
-        const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Request timed out')), CONFIG.REQUEST_TIMEOUT_MS)
-        );
-
-        const fetchPromise = (async () => {
-            try {
-                // Same-origin fetch includes session cookies natively
-                const response = await window.fetch(url, {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    function fetchFileArrayBuffer(url) {
+        return new Promise((resolve, reject) => {
+            let finished = false;
+            const timer = setTimeout(() => {
+                if (!finished) {
+                    finished = true;
+                    reject(new Error(`Timeout fetching file (${CONFIG.REQUEST_TIMEOUT_MS / 1000}s)`));
                 }
+            }, CONFIG.REQUEST_TIMEOUT_MS);
 
-                return await response.arrayBuffer();
-            } catch (fetchErr) {
-                console.warn('[GUC CMS] Native fetch failed, trying GM_xmlhttpRequest:', fetchErr);
-
-                // Fallback to GM_xmlhttpRequest if native fetch had an issue
-                if (typeof GM_xmlhttpRequest !== 'undefined') {
-                    return new Promise((resolve, reject) => {
-                        GM_xmlhttpRequest({
-                            method: 'GET',
-                            url: url,
-                            responseType: 'arraybuffer',
-                            timeout: CONFIG.REQUEST_TIMEOUT_MS,
-                            onload: (res) => {
-                                if (res.status >= 200 && res.status < 300) {
-                                    resolve(res.response);
-                                } else {
-                                    reject(new Error(`HTTP ${res.status}: ${res.statusText}`));
-                                }
-                            },
-                            onerror: (err) => reject(err || new Error('GM_xmlhttpRequest network error')),
-                            ontimeout: () => reject(new Error('GM_xmlhttpRequest timeout'))
-                        });
+            // Primary: GM_xmlhttpRequest with Referer header to prevent ASP.NET anti-hotlink blocks
+            if (typeof GM_xmlhttpRequest !== 'undefined') {
+                try {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: url,
+                        responseType: 'arraybuffer',
+                        timeout: CONFIG.REQUEST_TIMEOUT_MS,
+                        headers: {
+                            'Referer': window.location.href,
+                            'Accept': '*/*'
+                        },
+                        onload: (res) => {
+                            if (finished) return;
+                            finished = true;
+                            clearTimeout(timer);
+                            if (res.status >= 200 && res.status < 300) {
+                                resolve(res.response);
+                            } else {
+                                reject(new Error(`HTTP ${res.status}: ${res.statusText || 'Server Error'}`));
+                            }
+                        },
+                        onerror: (err) => {
+                            if (finished) return;
+                            // Fallback to fetch if GM_xmlhttpRequest errored
+                            tryFetchFallback(url, resolve, reject, timer);
+                        },
+                        ontimeout: () => {
+                            if (finished) return;
+                            finished = true;
+                            clearTimeout(timer);
+                            reject(new Error('GM_xmlhttpRequest request timed out'));
+                        }
                     });
+                    return;
+                } catch (gmErr) {
+                    console.warn('[GUC CMS] GM_xmlhttpRequest invocation error, falling back to fetch:', gmErr);
                 }
-                throw fetchErr;
             }
-        })();
 
-        return Promise.race([fetchPromise, timeoutPromise]);
+            // Fallback: window.fetch
+            tryFetchFallback(url, resolve, reject, timer);
+        });
+    }
+
+    function tryFetchFallback(url, resolve, reject, timer) {
+        window.fetch(url, { method: 'GET', credentials: 'include' })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.arrayBuffer();
+            })
+            .then(buf => {
+                clearTimeout(timer);
+                resolve(buf);
+            })
+            .catch(err => {
+                clearTimeout(timer);
+                reject(err);
+            });
     }
 
     /**
-     * Saves a Blob to user's disk with standard anchor click and direct link fallback.
+     * Triggers file download using GM_download or anchor element.
      */
-    function triggerBlobDownload(blob, filename) {
+    function triggerDownloadBlob(blob, filename) {
         const blobUrl = URL.createObjectURL(blob);
 
+        // Attempt 1: GM_download if available
+        if (typeof GM_download === 'function') {
+            try {
+                GM_download({
+                    url: blobUrl,
+                    name: filename,
+                    saveAs: false,
+                    onload: () => {
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+                    },
+                    onerror: () => {
+                        fallbackAnchorClick(blobUrl, filename);
+                    }
+                });
+                return blobUrl;
+            } catch (e) {
+                console.warn('[GUC CMS] GM_download failed, using anchor click:', e);
+            }
+        }
+
+        // Attempt 2: Standard anchor click
+        fallbackAnchorClick(blobUrl, filename);
+        return blobUrl;
+    }
+
+    function fallbackAnchorClick(blobUrl, filename) {
         const a = document.createElement('a');
         a.href = blobUrl;
         a.download = filename;
         a.style.display = 'none';
         document.body.appendChild(a);
         a.click();
-
         setTimeout(() => {
             if (a.parentNode) a.parentNode.removeChild(a);
             URL.revokeObjectURL(blobUrl);
@@ -430,7 +538,7 @@
             const blob = new Blob([buffer], { type: 'application/octet-stream' });
             const filename = item.uniqueFilename || `${item.baseTitle}${item.extension}`;
 
-            triggerBlobDownload(blob, filename);
+            triggerDownloadBlob(blob, filename);
 
             if (buttonEl) {
                 buttonEl.innerText = '✓ Downloaded';
@@ -509,10 +617,9 @@
             return;
         }
 
-        // Ensure JSZip is available
         const JSZipLib = (typeof JSZip !== 'undefined') ? JSZip : window.JSZip;
         if (!JSZipLib) {
-            showToast('JSZip Missing', 'JSZip library failed to load. Please refresh the page.', true);
+            alert('JSZip library failed to load. Please refresh the page.');
             return;
         }
 
@@ -520,10 +627,8 @@
         statusBtn.classList.add('busy');
         statusBtn.disabled = true;
 
-        const updateStatus = (btnText, toastText) => {
-            statusBtn.innerHTML = btnText;
-            if (toastText) showToast(sectionTitle, toastText);
-        };
+        showProgressModal(sectionTitle);
+        updateProgressModal(5, `Found ${items.length} files. Starting download...`);
 
         const zip = new JSZipLib();
         const deduplicated = deduplicateFilenames(items);
@@ -532,18 +637,19 @@
         let failedCount = 0;
 
         console.log(`[GUC CMS] Starting batch ZIP for "${sectionTitle}" (${total} files)...`);
-        updateStatus(`⏳ Starting (0/${total})...`, `Starting download of ${total} files...`);
 
-        // Concurrent downloader
+        // Concurrent downloader with live progress updates
         let currentIndex = 0;
         async function worker() {
             while (currentIndex < deduplicated.length) {
                 const itemIndex = currentIndex++;
                 const item = deduplicated[itemIndex];
 
-                updateStatus(
-                    `⏳ (${completed + 1}/${total}) ${item.uniqueFilename.substring(0, 15)}...`,
-                    `Downloading (${completed + 1}/${total}): <strong>${item.uniqueFilename}</strong>`
+                const currentPercent = 10 + Math.round((completed / total) * 75);
+                statusBtn.innerHTML = `⏳ (${completed + 1}/${total}) ${item.uniqueFilename.substring(0, 14)}...`;
+                updateProgressModal(
+                    currentPercent,
+                    `[${completed + 1}/${total}] Fetching <strong>${item.uniqueFilename}</strong>`
                 );
 
                 try {
@@ -551,13 +657,12 @@
                     const arrayBuffer = await fetchFileArrayBuffer(item.url);
 
                     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-                        throw new Error('Received empty file buffer');
+                        throw new Error('Received empty file buffer (0 bytes)');
                     }
 
-                    // Directly add buffer into zip archive
                     zip.file(item.uniqueFilename, arrayBuffer, { binary: true });
                     completed++;
-                    console.log(`[GUC CMS] Successfully buffered (${completed}/${total}): ${item.uniqueFilename}`);
+                    console.log(`[GUC CMS] Added to ZIP (${completed}/${total}): ${item.uniqueFilename}`);
                 } catch (err) {
                     console.error(`[GUC CMS] Failed to fetch "${item.uniqueFilename}":`, err);
                     failedCount++;
@@ -574,47 +679,60 @@
         await Promise.all(workers);
 
         if (completed === 0) {
-            showToast('Download Failed', `Could not download any files for ${sectionTitle}. Please check your connection.`, true);
-            statusBtn.innerHTML = originalBtnHtml;
-            statusBtn.classList.remove('busy');
-            statusBtn.disabled = false;
+            updateProgressModal(100, `❌ Failed to download any files for "${sectionTitle}". Check console for details.`);
+            statusBtn.innerHTML = '❌ Download Failed';
+            setTimeout(() => {
+                statusBtn.innerHTML = originalBtnHtml;
+                statusBtn.classList.remove('busy');
+                statusBtn.disabled = false;
+            }, 3500);
             return;
         }
 
         // Packaging stage
-        updateStatus(`📦 Packaging ZIP (${completed} files)...`, `Packaging ${completed} files into ZIP archive...`);
+        statusBtn.innerHTML = `📦 Zipping (${completed} files)...`;
+        updateProgressModal(90, `Building ZIP archive (${completed} files)...`);
         console.log(`[GUC CMS] Generating ZIP blob for ${completed} items...`);
 
         try {
             const zipBlob = await zip.generateAsync(
                 { type: 'blob', compression: 'STORE' },
                 (metadata) => {
-                    const pct = Math.round(metadata.percent);
-                    updateStatus(`📦 Packaging (${pct}%)...`, `Compressing: ${pct}%`);
+                    const pct = 90 + Math.round((metadata.percent / 100) * 10);
+                    updateProgressModal(pct, `Packaging ZIP: ${Math.round(metadata.percent)}%`);
                 }
             );
 
-            console.log(`[GUC CMS] ZIP blob ready: ${(zipBlob.size / (1024 * 1024)).toFixed(2)} MB`);
-
             const cleanZipName = `${sanitizeFilename(sectionTitle)} - GUC CMS.zip`;
-            triggerBlobDownload(zipBlob, cleanZipName);
+            const blobSizeMb = (zipBlob.size / (1024 * 1024)).toFixed(2);
+            console.log(`[GUC CMS] ZIP blob ready: ${blobSizeMb} MB`);
 
-            const resultMsg = failedCount > 0
-                ? `Completed with ${failedCount} skipped file(s). Download started!`
-                : `Successfully packaged ${completed} files! Download started.`;
+            // Trigger download
+            const blobUrl = triggerDownloadBlob(zipBlob, cleanZipName);
 
-            updateStatus(failedCount > 0 ? `⚠️ Done (${failedCount} skipped)` : `✅ Complete!`, resultMsg);
-            showToast('Download Ready', resultMsg, false, 6000);
+            // Update UI with ready state & direct clickable button in case auto-download was blocked
+            updateProgressModal(
+                100,
+                `✅ ZIP ready (${blobSizeMb} MB). Download started!`,
+                `<a href="${blobUrl}" download="${cleanZipName}" class="guc-dl-link-btn">💾 Click here if download didn't start</a>`
+            );
+
+            statusBtn.innerHTML = `✅ Complete! (${blobSizeMb} MB)`;
+            statusBtn.classList.remove('busy');
+            statusBtn.classList.add('ready');
+
+            closeProgressModal(8000);
         } catch (zipErr) {
             console.error('[GUC CMS] Error generating ZIP:', zipErr);
-            showToast('ZIP Error', `Failed to generate ZIP archive: ${zipErr.message}`, true);
-            updateStatus('❌ ZIP Error');
+            updateProgressModal(100, `❌ ZIP packaging error: ${zipErr.message}`);
+            statusBtn.innerHTML = '❌ ZIP Error';
         } finally {
             setTimeout(() => {
                 statusBtn.innerHTML = originalBtnHtml;
                 statusBtn.classList.remove('busy');
+                statusBtn.classList.remove('ready');
                 statusBtn.disabled = false;
-            }, 4000);
+            }, 6000);
         }
     }
 
@@ -723,5 +841,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.3.0 initialized.');
+    console.log('[GUC CMS] Content Renamer & Batch Downloader v1.4.0 initialized.');
 })();
