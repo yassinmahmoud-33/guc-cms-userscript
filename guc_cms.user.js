@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         GUC CMS Modern UI & Batch Downloader
 // @namespace    https://cms.guc.edu.eg/
-// @version      2.0.0
-// @description  Complete modern UI redesign for GUC CMS with collapsible weeks, clean cards, quick navigation, content badges, and 1-click batch ZIP downloads.
+// @version      2.1.0
+// @description  Notion-style collapsible toggles for GUC CMS with rounded corners, modern cards, quick navigation, and 1-click batch ZIP downloads.
 // @author       Antigravity
 // @match        https://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
 // @match        http://cms.guc.edu.eg/apps/student/CourseViewStn.aspx*
@@ -35,25 +35,135 @@
     };
 
     // =========================================================================
-    // MODERN UI THEME & STYLES (Clean Modern Design)
+    // BUILT-IN PURE JS SYNCHRONOUS ZIP GENERATOR (Zero Hangs, Subfolder Support)
+    // =========================================================================
+
+    const CRC_TABLE = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        }
+        CRC_TABLE[i] = c;
+    }
+
+    function calculateCRC32(buf) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < buf.length; i++) {
+            crc = CRC_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function buildZipSynchronous(files) {
+        const encoder = new TextEncoder();
+        const parts = [];
+        const cdEntries = [];
+        let offset = 0;
+
+        for (const file of files) {
+            const nameBytes = encoder.encode(file.name);
+            const data = file.data instanceof Uint8Array ? file.data : new Uint8Array(file.data);
+            const crc = calculateCRC32(data);
+            const size = data.length;
+
+            // Local header (30 bytes + filename)
+            const localHeader = new Uint8Array(30 + nameBytes.length);
+            const lv = new DataView(localHeader.buffer);
+            lv.setUint32(0, 0x04034b50, true);
+            lv.setUint16(4, 20, true);
+            lv.setUint16(6, 0x0800, true);
+            lv.setUint16(8, 0, true);
+            lv.setUint16(10, 0x5460, true);
+            lv.setUint16(12, 0x5821, true);
+            lv.setUint32(14, crc, true);
+            lv.setUint32(18, size, true);
+            lv.setUint32(22, size, true);
+            lv.setUint16(26, nameBytes.length, true);
+            lv.setUint16(28, 0, true);
+            localHeader.set(nameBytes, 30);
+
+            parts.push(localHeader);
+            parts.push(data);
+
+            // Central Directory Entry (46 bytes + filename)
+            const cdEntry = new Uint8Array(46 + nameBytes.length);
+            const cv = new DataView(cdEntry.buffer);
+            cv.setUint32(0, 0x02014b50, true);
+            cv.setUint16(4, 20, true);
+            cv.setUint16(6, 20, true);
+            cv.setUint16(8, 0x0800, true);
+            cv.setUint16(10, 0, true);
+            cv.setUint16(12, 0x5460, true);
+            cv.setUint16(14, 0x5821, true);
+            cv.setUint32(16, crc, true);
+            cv.setUint32(20, size, true);
+            cv.setUint32(24, size, true);
+            cv.setUint16(28, nameBytes.length, true);
+            cv.setUint16(30, 0, true);
+            cv.setUint16(32, 0, true);
+            cv.setUint16(34, 0, true);
+            cv.setUint16(36, 0, true);
+            cv.setUint32(38, 0x81a40000, true);
+            cv.setUint32(42, offset, true);
+            cdEntry.set(nameBytes, 46);
+
+            cdEntries.push(cdEntry);
+            offset += localHeader.length + data.length;
+        }
+
+        const cdOffset = offset;
+        let cdSize = 0;
+        for (const cd of cdEntries) {
+            parts.push(cd);
+            cdSize += cd.length;
+        }
+
+        // End of central directory record (22 bytes)
+        const eocd = new Uint8Array(22);
+        const ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054b50, true);
+        ev.setUint16(4, 0, true);
+        ev.setUint16(6, 0, true);
+        ev.setUint16(8, files.length, true);
+        ev.setUint16(10, files.length, true);
+        ev.setUint32(12, cdSize, true);
+        ev.setUint32(16, cdOffset, true);
+        ev.setUint16(20, 0, true);
+        parts.push(eocd);
+
+        let totalLength = parts.reduce((acc, p) => acc + p.length, 0);
+        const fullZipBuffer = new Uint8Array(totalLength);
+        let currentPos = 0;
+        for (const p of parts) {
+            fullZipBuffer.set(p, currentPos);
+            currentPos += p.length;
+        }
+
+        return fullZipBuffer;
+    }
+
+    // =========================================================================
+    // MODERN NOTION-STYLE THEME & ROUNDED CORNERS
     // =========================================================================
     const MODERN_STYLES = `
-        /* Root & Global Typography */
+        /* Global Typography & Background */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif !important;
-            background-color: #f1f5f9 !important;
-            color: #1e293b !important;
-            line-height: 1.5 !important;
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            line-height: 1.55 !important;
+            -webkit-font-smoothing: antialiased;
         }
 
         /* Top Sticky Master Toolbar */
         .guc-modern-toolbar {
             background: #ffffff;
             border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            padding: 14px 20px;
-            margin: 18px 0;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border-radius: 16px;
+            padding: 16px 22px;
+            margin: 20px 0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -86,7 +196,7 @@
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
-            padding-top: 10px;
+            padding-top: 12px;
             border-top: 1px solid #f1f5f9;
         }
         .guc-jump-label {
@@ -97,10 +207,10 @@
             letter-spacing: 0.5px;
         }
         .guc-jump-pill {
-            background: #f8fafc;
-            border: 1px solid #cbd5e1;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
             color: #334155 !important;
-            padding: 4px 10px;
+            padding: 5px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
@@ -115,13 +225,13 @@
             transform: translateY(-1px);
         }
 
-        /* Toolbar Buttons */
+        /* Outline Buttons */
         .guc-btn-outline {
             background: #ffffff;
             border: 1px solid #cbd5e1;
             color: #334155 !important;
-            padding: 6px 12px;
-            border-radius: 8px;
+            padding: 6px 14px;
+            border-radius: 10px;
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
@@ -131,30 +241,31 @@
             gap: 6px;
         }
         .guc-btn-outline:hover {
-            background: #f1f5f9;
+            background: #f8fafc;
             border-color: #94a3b8;
             color: #0f172a !important;
         }
 
-        /* Modernized Week Section Cards */
+        /* Notion-Style Week Section Card */
         .guc-week-section-wrapper {
             background: #ffffff;
             border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            margin-bottom: 24px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+            border-radius: 16px;
+            margin-bottom: 22px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
             overflow: hidden;
-            transition: box-shadow 0.2s ease;
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
         }
         .guc-week-section-wrapper:hover {
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.06);
+            border-color: #cbd5e1;
         }
 
-        /* Week Header */
+        /* Notion-Style Week Header */
         .guc-modern-week-header {
-            padding: 16px 20px;
-            background: #f8fafc;
-            border-bottom: 1px solid #e2e8f0;
+            padding: 14px 20px;
+            background: #ffffff;
+            border-bottom: 1px solid #f1f5f9;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -163,28 +274,49 @@
             transition: background 0.15s ease;
         }
         .guc-modern-week-header:hover {
-            background: #f1f5f9;
+            background: #f8fafc;
         }
         .guc-week-header-left {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
         }
-        .guc-week-collapse-chevron {
-            font-size: 14px;
-            font-weight: 800;
+
+        /* Notion-Style Arrowhead Toggle */
+        .guc-notion-toggle-btn {
+            width: 26px;
+            height: 26px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
             color: #64748b;
-            transition: transform 0.25s ease;
-            display: inline-block;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
         }
-        .guc-week-collapsed .guc-week-collapse-chevron {
-            transform: rotate(-90deg);
+        .guc-modern-week-header:hover .guc-notion-toggle-btn {
+            background: rgba(0, 0, 0, 0.05);
+            color: #0f172a;
         }
+        .guc-notion-arrow {
+            width: 12px;
+            height: 12px;
+            fill: currentColor;
+            transform: rotate(90deg); /* Points down when open */
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .guc-week-collapsed .guc-notion-arrow {
+            transform: rotate(0deg); /* Points right when collapsed */
+        }
+
         .guc-week-title-text {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
             color: #0f172a;
             margin: 0 !important;
+            letter-spacing: -0.2px;
         }
         .guc-week-header-actions {
             display: flex;
@@ -192,34 +324,35 @@
             gap: 10px;
         }
 
-        /* Week Body (Collapsible) */
+        /* Collapsible Week Body Container */
         .guc-week-body-container {
-            padding: 20px;
-            transition: all 0.3s ease;
+            padding: 18px 20px;
+            background: #ffffff;
+            transition: all 0.25s ease;
         }
         .guc-week-collapsed .guc-week-body-container {
             display: none !important;
         }
 
-        /* Modernized Item Card (.card.mb-4) */
+        /* Modernized Item Card (.card.mb-4) with Rounded Corners */
         div.card.mb-4 {
             background: #ffffff !important;
             border: 1px solid #e2e8f0 !important;
-            border-radius: 10px !important;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
-            margin-bottom: 16px !important;
+            border-radius: 14px !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02) !important;
+            margin-bottom: 14px !important;
             transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
         }
         div.card.mb-4:hover {
             transform: translateY(-2px) !important;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.07) !important;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06) !important;
             border-color: #cbd5e1 !important;
         }
         div.card.mb-4 .card-body {
             padding: 16px 20px !important;
         }
 
-        /* Content Title & Modern Badge */
+        /* Content Title & Badges */
         div[id^="content"] {
             font-size: 15px !important;
             font-weight: 600 !important;
@@ -236,59 +369,57 @@
             font-weight: 700 !important;
         }
         .guc-content-type-badge {
-            background: #e0f2fe !important;
-            color: #0369a1 !important;
-            padding: 2px 8px !important;
-            border-radius: 6px !important;
+            background: #eff6ff !important;
+            color: #2563eb !important;
+            padding: 2px 9px !important;
+            border-radius: 20px !important;
             font-size: 11px !important;
             font-weight: 700 !important;
             letter-spacing: 0.3px !important;
-            border: 1px solid #bae6fd !important;
+            border: 1px solid #dbeafe !important;
             text-transform: uppercase !important;
         }
 
-        /* Content Action Buttons Styling */
+        /* Content Action Buttons with Rounded Corners */
         a.contentbtn.btn-primary, button.contentbtn.btn-primary {
             background: linear-gradient(135deg, #0d6efd, #0b5ed7) !important;
             border: 1px solid #0a58ca !important;
-            border-radius: 6px !important;
-            padding: 6px 14px !important;
+            border-radius: 8px !important;
+            padding: 6px 16px !important;
             font-size: 13px !important;
             font-weight: 600 !important;
-            box-shadow: 0 2px 4px rgba(13, 110, 253, 0.15) !important;
+            box-shadow: 0 2px 5px rgba(13, 110, 253, 0.15) !important;
             transition: all 0.15s ease !important;
         }
         a.contentbtn.btn-primary:hover, button.contentbtn.btn-primary:hover {
             background: linear-gradient(135deg, #0b5ed7, #0a58ca) !important;
-            box-shadow: 0 4px 8px rgba(13, 110, 253, 0.25) !important;
+            box-shadow: 0 4px 10px rgba(13, 110, 253, 0.25) !important;
             transform: translateY(-1px) !important;
         }
 
-        /* Watch Video Button */
         input.vodbutton, .vodbutton {
-            background: linear-gradient(135deg, #6f42c1, #59359a) !important;
-            border: 1px solid #59359a !important;
+            background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+            border: 1px solid #6d28d9 !important;
             color: #ffffff !important;
-            border-radius: 6px !important;
-            padding: 6px 14px !important;
+            border-radius: 8px !important;
+            padding: 6px 16px !important;
             font-size: 13px !important;
             font-weight: 600 !important;
-            box-shadow: 0 2px 4px rgba(111, 66, 193, 0.15) !important;
+            box-shadow: 0 2px 5px rgba(124, 58, 237, 0.15) !important;
             transition: all 0.15s ease !important;
             margin-left: 6px !important;
         }
         input.vodbutton:hover, .vodbutton:hover {
-            background: linear-gradient(135deg, #59359a, #4d2d85) !important;
+            background: linear-gradient(135deg, #6d28d9, #5b21b6) !important;
             transform: translateY(-1px) !important;
         }
 
-        /* Cleaned Up Complaint Button */
         input.complaint, .complaint {
             background: #f8fafc !important;
             border: 1px solid #e2e8f0 !important;
             color: #64748b !important;
-            border-radius: 6px !important;
-            padding: 5px 10px !important;
+            border-radius: 8px !important;
+            padding: 5px 12px !important;
             font-size: 12px !important;
             font-weight: 500 !important;
             margin-left: 6px !important;
@@ -301,16 +432,16 @@
             color: #dc2626 !important;
         }
 
-        /* De-clutter Rating Stars (Subtle) */
+        /* Subtle Rating Stars */
         .rating, [class*="rating"] {
-            opacity: 0.5;
+            opacity: 0.4;
             transition: opacity 0.2s ease;
         }
         .rating:hover, [class*="rating"]:hover {
             opacity: 1;
         }
 
-        /* Checkbox & Zip Button in Week Header */
+        /* Week Select Checkbox */
         .guc-week-select-label {
             display: inline-flex;
             align-items: center;
@@ -320,10 +451,10 @@
             color: #475569;
             cursor: pointer;
             user-select: none;
-            background: #ffffff;
+            background: #f8fafc;
             border: 1px solid #cbd5e1;
-            padding: 5px 10px;
-            border-radius: 6px;
+            padding: 5px 12px;
+            border-radius: 8px;
             transition: all 0.15s ease;
         }
         .guc-week-select-label:hover {
@@ -338,17 +469,18 @@
             accent-color: #0d6efd;
         }
 
+        /* Week ZIP Button */
         .guc-zip-btn {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 5px 12px;
+            padding: 5px 14px;
             font-size: 12px;
             font-weight: 600;
             color: #ffffff !important;
             background: linear-gradient(135deg, #0d6efd, #0b5ed7);
             border: 1px solid #0a58ca;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
             transition: all 0.15s ease-in-out;
@@ -374,20 +506,20 @@
 
         .guc-vod-dl-btn {
             margin-left: 6px;
-            padding: 6px 12px;
+            padding: 6px 14px;
             font-size: 13px;
             font-weight: 600;
             color: #ffffff !important;
-            background-color: #198754;
-            border: 1px solid #157347;
-            border-radius: 6px;
+            background-color: #10b981;
+            border: 1px solid #059669;
+            border-radius: 8px;
             cursor: pointer;
             transition: background-color 0.15s ease-in-out;
             display: inline-block;
             text-decoration: none !important;
         }
         .guc-vod-dl-btn:hover {
-            background-color: #157347;
+            background-color: #059669;
         }
 
         /* Top Dropdown Container */
@@ -406,7 +538,7 @@
             color: #ffffff !important;
             background: linear-gradient(135deg, #0d6efd, #0b5ed7);
             border: 1px solid #0a58ca;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
             box-shadow: 0 2px 6px rgba(13, 110, 253, 0.25);
             transition: all 0.2s ease;
@@ -433,9 +565,9 @@
             max-width: 90vw;
             background: #ffffff;
             border: 1px solid #e2e8f0;
-            border-radius: 12px;
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
-            padding: 14px;
+            border-radius: 16px;
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.12);
+            padding: 16px;
             z-index: 10000;
         }
         .guc-dropdown-container.open .guc-dropdown-menu {
@@ -447,7 +579,7 @@
             align-items: center;
             justify-content: space-between;
             padding-bottom: 10px;
-            border-bottom: 1px solid #e2e8f0;
+            border-bottom: 1px solid #f1f5f9;
             margin-bottom: 10px;
         }
         .guc-dd-title {
@@ -463,8 +595,8 @@
             background: #f8fafc;
             border: 1px solid #cbd5e1;
             color: #475569;
-            padding: 3px 8px;
-            border-radius: 4px;
+            padding: 3px 10px;
+            border-radius: 6px;
             font-size: 11px;
             font-weight: 600;
             cursor: pointer;
@@ -493,8 +625,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 7px 10px;
-            border-radius: 6px;
+            padding: 8px 10px;
+            border-radius: 8px;
             transition: background 0.15s ease;
             cursor: pointer;
             user-select: none;
@@ -515,26 +647,26 @@
             font-size: 11px;
             font-weight: 600;
             color: #64748b;
-            background: #e2e8f0;
-            padding: 2px 7px;
-            border-radius: 10px;
+            background: #f1f5f9;
+            padding: 2px 8px;
+            border-radius: 12px;
         }
 
         .guc-dd-download-btn {
             width: 100%;
             padding: 10px;
-            background: linear-gradient(135deg, #198754, #157347);
+            background: linear-gradient(135deg, #10b981, #059669);
             color: #ffffff !important;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             font-weight: 700;
             font-size: 13px;
             cursor: pointer;
-            box-shadow: 0 3px 8px rgba(25, 135, 84, 0.25);
+            box-shadow: 0 3px 8px rgba(16, 185, 129, 0.25);
             transition: all 0.2s ease;
         }
         .guc-dd-download-btn:hover {
-            background: linear-gradient(135deg, #157347, #0f5132);
+            background: linear-gradient(135deg, #059669, #047857);
         }
         .guc-dd-download-btn:disabled {
             background: #64748b !important;
@@ -550,9 +682,9 @@
             width: 380px;
             background: #ffffff;
             color: #1e293b;
-            border-radius: 12px;
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
-            padding: 16px 20px;
+            border-radius: 16px;
+            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.16);
+            padding: 18px 22px;
             z-index: 999999;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             font-size: 13px;
@@ -594,19 +726,19 @@
         .guc-dl-link-btn {
             display: block;
             width: 100%;
-            padding: 8px;
+            padding: 9px;
             margin-top: 10px;
-            background: #198754;
+            background: #10b981;
             color: #ffffff !important;
             text-align: center;
             font-weight: 600;
-            border-radius: 6px;
+            border-radius: 8px;
             text-decoration: none !important;
             cursor: pointer;
             box-sizing: border-box;
         }
         .guc-dl-link-btn:hover {
-            background: #157347;
+            background: #059669;
         }
         .guc-modal-close {
             cursor: pointer;
@@ -964,7 +1096,7 @@
             const link = item.downloadLinkElement;
             if (!link) return;
 
-            // Restyle type text into a modern badge
+            // Restyle type text into a modern pill badge
             const titleContainer = card.querySelector(CONFIG.TITLE_CONTAINER_SELECTOR);
             if (titleContainer && !titleContainer.querySelector('.guc-content-type-badge')) {
                 if (item.typeSuffix) {
@@ -973,7 +1105,6 @@
                     badge.className = 'guc-content-type-badge';
                     badge.textContent = cleanType;
 
-                    // Remove raw text and append badge
                     const strong = titleContainer.querySelector('strong');
                     if (strong) {
                         titleContainer.innerHTML = '';
@@ -1144,7 +1275,7 @@
     }
 
     // =========================================================================
-    // FEATURE 3: COLLAPSIBLE WEEKS & TOP MASTER TOOLBAR
+    // FEATURE 3: NOTION-STYLE WEEKS & TOP MASTER TOOLBAR
     // =========================================================================
 
     const detectedWeeksMap = new Map();
@@ -1267,7 +1398,7 @@
         const headerTitle = modernToolbarEl.querySelector('#guc-dd-header-title');
         if (headerTitle) headerTitle.textContent = `Select Weeks (${detectedWeeksMap.size} total)`;
 
-        detectedWeeksMap.forEach((week, title) => {
+        detectedWeeksMap.forEach((week) => {
             // Jump pill
             if (!week.jumpPill) {
                 const pill = document.createElement('a');
@@ -1379,7 +1510,7 @@
     }
 
     // =========================================================================
-    // FEATURE 4: COLLAPSIBLE WEEK STRUCTURE & INJECTIONS
+    // FEATURE 4: NOTION-STYLE TOGGLE ARROWHEAD & ROUNDED SECTIONS
     // =========================================================================
 
     function modernizeWeekSections() {
@@ -1394,7 +1525,6 @@
 
             const rawTitle = heading.textContent.replace(/Download.*Zip/gi, '').trim();
 
-            // Locate elements belonging to this week
             const headingRow = heading.closest('.row') || heading;
             let collectedElements = [];
             let next = headingRow.nextElementSibling;
@@ -1407,7 +1537,6 @@
                 next = next.nextElementSibling;
             }
 
-            // Cards in this week
             const collectedCards = [];
             collectedElements.forEach(el => {
                 if (el.matches(CONFIG.ITEM_CARD_SELECTOR)) {
@@ -1422,16 +1551,21 @@
             const items = collectedCards.map(c => extractItemInfo(c)).filter(Boolean);
             const filteredItems = CONFIG.INCLUDE_VOD_IN_ZIP ? items : items.filter(i => !i.isVod);
 
-            // Wrap entire week inside modern section card
+            // Notion-Style Section Card
             const sectionWrapper = document.createElement('div');
             sectionWrapper.className = 'guc-week-section-wrapper';
 
             const modernHeader = document.createElement('div');
             modernHeader.className = 'guc-modern-week-header';
 
+            // Notion-Style Arrow SVG
             modernHeader.innerHTML = `
                 <div class="guc-week-header-left">
-                    <span class="guc-week-collapse-chevron">▼</span>
+                    <button type="button" class="guc-notion-toggle-btn" title="Toggle week">
+                        <svg class="guc-notion-arrow" viewBox="0 0 16 16">
+                            <path d="M6 3.5l5 4.5-5 4.5V3.5z"/>
+                        </svg>
+                    </button>
                     <h3 class="guc-week-title-text">${rawTitle}</h3>
                 </div>
                 <div class="guc-week-header-actions" onclick="event.stopPropagation()"></div>
@@ -1448,9 +1582,9 @@
 
             // Move contents into body container
             collectedElements.forEach(el => bodyContainer.appendChild(el));
-            headingRow.style.display = 'none'; // Hide old raw heading
+            headingRow.style.display = 'none';
 
-            // Click header to toggle collapse
+            // Click header to toggle collapse (Notion behavior)
             modernHeader.addEventListener('click', () => {
                 sectionWrapper.classList.toggle('guc-week-collapsed');
             });
@@ -1519,7 +1653,7 @@
     }
 
     // =========================================================================
-    // INITIALIZATION & MUTATION OBSERVER
+    // INITIALIZATION & SAFE MUTATION OBSERVER
     // =========================================================================
 
     function runAll() {
@@ -1567,5 +1701,5 @@
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[GUC CMS] Modern UI & Batch Downloader v2.0.0 initialized.');
+    console.log('[GUC CMS] Modern UI & Batch Downloader v2.1.0 initialized.');
 })();
